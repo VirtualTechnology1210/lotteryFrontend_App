@@ -1,0 +1,560 @@
+import React, { useState, useEffect, useCallback, memo } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    ScrollView,
+    TouchableOpacity,
+    TextInput,
+    Alert,
+    ActivityIndicator,
+    Platform,
+    RefreshControl
+} from 'react-native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import LinearGradient from 'react-native-linear-gradient';
+import { Dropdown } from 'react-native-element-dropdown';
+import { productService } from '../services/productService';
+import { categoryService } from '../services/categoryService';
+
+// Memoized Product List Item for better performance
+const ProductListItem = memo(({ product, onEdit, onDelete }) => (
+    <View style={styles.productCard}>
+        <View style={styles.productIconContainer}>
+            <View style={styles.productIconCircle}>
+                <Text style={styles.productInitial}>{product.product_name.charAt(0).toUpperCase()}</Text>
+            </View>
+        </View>
+        <View style={styles.productInfo}>
+            <Text style={styles.productName}>{product.product_name}</Text>
+            <View style={styles.metaRow}>
+                <View style={[styles.badge, styles.priceBadge]}>
+                    <MaterialCommunityIcons name="cash" size={12} color="#15803d" />
+                    <Text style={styles.priceText}>₹{product.price}</Text>
+                </View>
+            </View>
+            {product.category_name && (
+                <Text style={styles.categoryLabel}>{product.category_name}</Text>
+            )}
+        </View>
+        <View style={styles.actionsContainer}>
+            <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => onEdit(product)}
+            >
+                <MaterialCommunityIcons name="pencil-outline" size={24} color="#3a48c2" />
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => onDelete(product.id, product.product_name)}
+            >
+                <MaterialCommunityIcons name="delete-outline" size={24} color="#FF5252" />
+            </TouchableOpacity>
+        </View>
+    </View>
+));
+
+const ProductScreen = ({ navigation }) => {
+    const [products, setProducts] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [showAddModal, setShowAddModal] = useState(false);
+
+    // Form state
+    const [categoryId, setCategoryId] = useState(null);
+    const [productName, setProductName] = useState('');
+    const [productCode, setProductCode] = useState('');
+    const [price, setPrice] = useState('');
+    const [editingProduct, setEditingProduct] = useState(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isFocus, setIsFocus] = useState(false);
+
+    const fetchData = useCallback(async () => {
+        try {
+            const [productsRes, categoriesRes] = await Promise.all([
+                productService.getAllProducts(),
+                categoryService.getActiveCategories()
+            ]);
+
+            if (productsRes && productsRes.data) {
+                setProducts(productsRes.data.products || []);
+            }
+            if (categoriesRes && categoriesRes.data) {
+                // Map categories for dropdown
+                const cats = (categoriesRes.data.categories || []).map(cat => ({
+                    label: cat.category_name,
+                    value: cat.id
+                }));
+                setCategories(cats);
+            }
+        } catch (error) {
+            console.error('Fetch data error:', error);
+            Alert.alert('Error', 'Failed to load data');
+        } finally {
+            setIsLoading(false);
+            setRefreshing(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        fetchData();
+    }, [fetchData]);
+
+    const handleEdit = useCallback((product) => {
+        setCategoryId(product.category_id);
+        setProductName(product.product_name);
+        setProductCode(product.product_code);
+        setPrice(product.price.toString());
+        setEditingProduct(product);
+        setShowAddModal(true);
+    }, []);
+
+    const resetForm = () => {
+        setCategoryId(null);
+        setProductName('');
+        setProductCode('');
+        setPrice('');
+        setEditingProduct(null);
+    };
+
+    const toggleModal = () => {
+        if (showAddModal) {
+            resetForm();
+            setShowAddModal(false);
+        } else {
+            resetForm();
+            setShowAddModal(true);
+        }
+    };
+
+    const handleSubmit = async () => {
+        if (!categoryId) {
+            Alert.alert('Validation Error', 'Please select a category');
+            return;
+        }
+        if (!productName.trim()) {
+            Alert.alert('Validation Error', 'Please enter product name');
+            return;
+        }
+        if (!productCode.trim()) {
+            Alert.alert('Validation Error', 'Please enter product code');
+            return;
+        }
+        if (!price || isNaN(parseFloat(price)) || parseFloat(price) < 0) {
+            Alert.alert('Validation Error', 'Please enter a valid price');
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const productData = {
+                category_id: categoryId,
+                product_name: productName.trim(),
+                product_code: productCode.trim(),
+                price: parseFloat(price)
+            };
+
+            if (editingProduct) {
+                await productService.updateProduct(editingProduct.id, productData);
+                Alert.alert('Success', 'Product updated successfully');
+            } else {
+                await productService.createProduct(productData);
+                Alert.alert('Success', 'Product created successfully');
+            }
+
+            resetForm();
+            setShowAddModal(false);
+            fetchData();
+        } catch (error) {
+            console.error('Submit product error:', error);
+            const msg = error.response?.data?.message || (editingProduct ? 'Failed to update product' : 'Failed to create product');
+            Alert.alert('Error', msg);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDelete = useCallback((id, name) => {
+        Alert.alert(
+            'Delete Product',
+            `Are you sure you want to delete "${name}"?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await productService.deleteProduct(id);
+                            Alert.alert('Success', 'Product deleted successfully');
+                            fetchData();
+                        } catch (error) {
+                            Alert.alert('Error', 'Failed to delete product');
+                        }
+                    }
+                }
+            ]
+        );
+    }, [fetchData]);
+
+    if (isLoading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#3a48c2" />
+            </View>
+        );
+    }
+
+    return (
+        <View style={styles.container}>
+            {/* Header */}
+            <LinearGradient
+                colors={['#3a48c2', '#2a38a0']}
+                style={styles.header}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+            >
+                <View style={styles.headerContent}>
+                    <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
+                        <MaterialCommunityIcons name="menu" size={26} color="#fff" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>Products</Text>
+                    <TouchableOpacity
+                        onPress={toggleModal}
+                        style={styles.addButton}
+                    >
+                        <MaterialCommunityIcons
+                            name={showAddModal ? "close" : "plus"}
+                            size={26}
+                            color="#fff"
+                        />
+                    </TouchableOpacity>
+                </View>
+            </LinearGradient>
+
+            <ScrollView
+                style={styles.scrollView}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3a48c2" />
+                }
+            >
+                {/* Add Product Form */}
+                {showAddModal && (
+                    <View style={styles.addFormContainer}>
+                        <Text style={styles.formTitle}>{editingProduct ? 'Edit Product' : 'Create New Product'}</Text>
+
+                        {/* Category Dropdown */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Category *</Text>
+                            <Dropdown
+                                style={[styles.dropdown, isFocus && { borderColor: '#3a48c2' }]}
+                                placeholderStyle={styles.placeholderStyle}
+                                selectedTextStyle={styles.selectedTextStyle}
+                                data={categories}
+                                maxHeight={300}
+                                labelField="label"
+                                valueField="value"
+                                placeholder={!isFocus ? 'Select Category' : '...'}
+                                value={categoryId}
+                                onFocus={() => setIsFocus(true)}
+                                onBlur={() => setIsFocus(false)}
+                                onChange={item => {
+                                    setCategoryId(item.value);
+                                    setIsFocus(false);
+                                }}
+                            />
+                        </View>
+
+                        {/* Product Name */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Product Name *</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Enter product name"
+                                value={productName}
+                                onChangeText={setProductName}
+                                placeholderTextColor="#999"
+                            />
+                        </View>
+
+                        {/* Product Code */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Product Code *</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Enter product code (e.g., P001)"
+                                value={productCode}
+                                onChangeText={setProductCode}
+                                placeholderTextColor="#999"
+                                autoCapitalize="characters"
+                            />
+                        </View>
+
+                        {/* Price */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Price *</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Enter price"
+                                value={price}
+                                onChangeText={setPrice}
+                                placeholderTextColor="#999"
+                                keyboardType="numeric"
+                            />
+                        </View>
+
+                        {/* Submit Button */}
+                        <TouchableOpacity
+                            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+                            onPress={handleSubmit}
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={styles.submitButtonText}>{editingProduct ? 'Update Product' : 'Create Product'}</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                {/* Products List */}
+                <View style={styles.productsContainer}>
+                    <Text style={styles.sectionTitle}>All Products ({products.length})</Text>
+
+                    {products.length === 0 ? (
+                        <View style={styles.emptyState}>
+                            <MaterialCommunityIcons name="package-variant" size={60} color="#ddd" />
+                            <Text style={styles.emptyText}>No products yet</Text>
+                            <Text style={styles.emptySubtext}>Tap the + button to create one</Text>
+                        </View>
+                    ) : (
+                        products.map((product) => (
+                            <ProductListItem
+                                key={product.id}
+                                product={product}
+                                onEdit={handleEdit}
+                                onDelete={handleDelete}
+                            />
+                        ))
+                    )}
+                </View>
+            </ScrollView>
+        </View>
+    );
+};
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#F8F9FD',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#F8F9FD',
+    },
+    header: {
+        paddingTop: Platform.OS === 'android' ? 20 : 20,
+        paddingBottom: 10,
+        paddingHorizontal: 20,
+    },
+    headerContent: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    menuButton: {
+        padding: 8,
+    },
+    headerTitle: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#fff',
+    },
+    addButton: {
+        padding: 8,
+    },
+    scrollView: {
+        flex: 1,
+    },
+    addFormContainer: {
+        backgroundColor: '#fff',
+        margin: 20,
+        padding: 20,
+        borderRadius: 20,
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+    },
+    formTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1a1a1a',
+        marginBottom: 20,
+    },
+    inputGroup: {
+        marginBottom: 20,
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 8,
+    },
+    input: {
+        backgroundColor: '#F5F7FA',
+        borderRadius: 12,
+        padding: 14,
+        fontSize: 15,
+        color: '#1a1a1a',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+    },
+    dropdown: {
+        height: 50,
+        borderColor: '#E0E0E0',
+        borderWidth: 1,
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        backgroundColor: '#F5F7FA',
+    },
+    placeholderStyle: {
+        fontSize: 15,
+        color: '#999',
+    },
+    selectedTextStyle: {
+        fontSize: 15,
+        color: '#1a1a1a',
+    },
+    submitButton: {
+        backgroundColor: '#3a48c2',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        marginTop: 10,
+    },
+    submitButtonDisabled: {
+        opacity: 0.6,
+    },
+    submitButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    productsContainer: {
+        padding: 20,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#1a1a1a',
+        marginBottom: 15,
+    },
+    emptyState: {
+        alignItems: 'center',
+        paddingVertical: 60,
+    },
+    emptyText: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#999',
+        marginTop: 15,
+    },
+    emptySubtext: {
+        fontSize: 14,
+        color: '#bbb',
+        marginTop: 5,
+    },
+    productCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        marginBottom: 15,
+        padding: 15,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    productIconContainer: {
+        marginRight: 15,
+    },
+    productIconCircle: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#EEF0FF',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    productInitial: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#3a48c2',
+    },
+    productInfo: {
+        flex: 1,
+    },
+    productName: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#1a1a1a',
+        marginBottom: 6,
+    },
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginBottom: 4,
+    },
+    badge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F5F7FA',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        gap: 4,
+    },
+    badgeText: {
+        fontSize: 12,
+        color: '#555',
+        fontWeight: '600',
+    },
+    priceBadge: {
+        backgroundColor: '#DCFCE7',
+    },
+    priceText: {
+        fontSize: 12,
+        color: '#15803d',
+        fontWeight: 'bold',
+    },
+    categoryLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#000000ff',
+        marginTop: 2,
+    },
+    actionsContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    actionButton: {
+        padding: 10,
+    },
+});
+
+export default ProductScreen;
