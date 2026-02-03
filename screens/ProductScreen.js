@@ -16,9 +16,10 @@ import LinearGradient from 'react-native-linear-gradient';
 import { Dropdown } from 'react-native-element-dropdown';
 import { productService } from '../services/productService';
 import { categoryService } from '../services/categoryService';
+import { authService } from '../services';
 
 // Memoized Product List Item for better performance
-const ProductListItem = memo(({ product, onEdit, onDelete }) => (
+const ProductListItem = memo(({ product, onEdit, onDelete, canEdit, canDelete }) => (
     <View style={styles.productCard}>
         <View style={styles.productIconContainer}>
             <View style={styles.productIconCircle}>
@@ -37,20 +38,26 @@ const ProductListItem = memo(({ product, onEdit, onDelete }) => (
                 <Text style={styles.categoryLabel}>{product.category_name}</Text>
             )}
         </View>
-        <View style={styles.actionsContainer}>
-            <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => onEdit(product)}
-            >
-                <MaterialCommunityIcons name="pencil-outline" size={24} color="#3a48c2" />
-            </TouchableOpacity>
-            <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => onDelete(product.id, product.product_name)}
-            >
-                <MaterialCommunityIcons name="delete-outline" size={24} color="#FF5252" />
-            </TouchableOpacity>
-        </View>
+        {(canEdit || canDelete) && (
+            <View style={styles.actionsContainer}>
+                {canEdit && (
+                    <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => onEdit(product)}
+                    >
+                        <MaterialCommunityIcons name="pencil-outline" size={24} color="#3a48c2" />
+                    </TouchableOpacity>
+                )}
+                {canDelete && (
+                    <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => onDelete(product.id, product.product_name)}
+                    >
+                        <MaterialCommunityIcons name="delete-outline" size={24} color="#FF5252" />
+                    </TouchableOpacity>
+                )}
+            </View>
+        )}
     </View>
 ));
 
@@ -61,6 +68,14 @@ const ProductScreen = ({ navigation }) => {
     const [refreshing, setRefreshing] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
 
+    // Permission state
+    const [permissions, setPermissions] = useState({
+        view: false,
+        add: false,
+        edit: false,
+        del: false
+    });
+
     // Form state
     const [categoryId, setCategoryId] = useState(null);
     const [productName, setProductName] = useState('');
@@ -69,6 +84,25 @@ const ProductScreen = ({ navigation }) => {
     const [editingProduct, setEditingProduct] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isFocus, setIsFocus] = useState(false);
+
+    // Load permissions on mount
+    useEffect(() => {
+        const loadPermissions = async () => {
+            try {
+                const perms = await authService.getPermissions();
+                const productPerms = perms['products'] || {};
+                setPermissions({
+                    view: productPerms.view || false,
+                    add: productPerms.add || false,
+                    edit: productPerms.edit || false,
+                    del: productPerms.del || false
+                });
+            } catch (error) {
+                console.error('Error loading permissions:', error);
+            }
+        };
+        loadPermissions();
+    }, []);
 
     const fetchData = useCallback(async () => {
         try {
@@ -225,16 +259,20 @@ const ProductScreen = ({ navigation }) => {
                         <MaterialCommunityIcons name="menu" size={26} color="#fff" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Products</Text>
-                    <TouchableOpacity
-                        onPress={toggleModal}
-                        style={styles.addButton}
-                    >
-                        <MaterialCommunityIcons
-                            name={showAddModal ? "close" : "plus"}
-                            size={26}
-                            color="#fff"
-                        />
-                    </TouchableOpacity>
+                    {permissions.add ? (
+                        <TouchableOpacity
+                            onPress={toggleModal}
+                            style={styles.addButton}
+                        >
+                            <MaterialCommunityIcons
+                                name={showAddModal ? "close" : "plus"}
+                                size={26}
+                                color="#fff"
+                            />
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={styles.addButton} />
+                    )}
                 </View>
             </LinearGradient>
 
@@ -341,6 +379,8 @@ const ProductScreen = ({ navigation }) => {
                                 product={product}
                                 onEdit={handleEdit}
                                 onDelete={handleDelete}
+                                canEdit={permissions.edit}
+                                canDelete={permissions.del}
                             />
                         ))
                     )}

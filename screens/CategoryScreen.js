@@ -17,10 +17,10 @@ import LinearGradient from 'react-native-linear-gradient';
 import { launchImageLibrary } from 'react-native-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { categoryService } from '../services/categoryService';
-import { getImageUrl } from '../services';
+import { getImageUrl, authService } from '../services';
 
 // Memoized Category List Item for better performance
-const CategoryListItem = memo(({ category, onEdit, onDelete }) => {
+const CategoryListItem = memo(({ category, onEdit, onDelete, canEdit, canDelete }) => {
     const [imageLoading, setImageLoading] = useState(true);
     const [imageError, setImageError] = useState(false);
 
@@ -60,20 +60,26 @@ const CategoryListItem = memo(({ category, onEdit, onDelete }) => {
                     </View>
                 )}
             </View>
-            <View style={styles.actionsContainer}>
-                <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => onEdit(category)}
-                >
-                    <MaterialCommunityIcons name="pencil-outline" size={24} color="#3a48c2" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => onDelete(category.id, category.category_name)}
-                >
-                    <MaterialCommunityIcons name="delete-outline" size={24} color="#FF5252" />
-                </TouchableOpacity>
-            </View>
+            {(canEdit || canDelete) && (
+                <View style={styles.actionsContainer}>
+                    {canEdit && (
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => onEdit(category)}
+                        >
+                            <MaterialCommunityIcons name="pencil-outline" size={24} color="#3a48c2" />
+                        </TouchableOpacity>
+                    )}
+                    {canDelete && (
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => onDelete(category.id, category.category_name)}
+                        >
+                            <MaterialCommunityIcons name="delete-outline" size={24} color="#FF5252" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+            )}
         </View>
     );
 });
@@ -84,6 +90,14 @@ const CategoryScreen = ({ navigation }) => {
     const [refreshing, setRefreshing] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
 
+    // Permission state
+    const [permissions, setPermissions] = useState({
+        view: false,
+        add: false,
+        edit: false,
+        del: false
+    });
+
     // Form state
     const [categoryName, setCategoryName] = useState('');
     const [categoryImage, setCategoryImage] = useState(null);
@@ -92,6 +106,25 @@ const CategoryScreen = ({ navigation }) => {
     const [showTimePicker, setShowTimePicker] = useState(false);
     const [selectedTime, setSelectedTime] = useState(new Date());
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Load permissions on mount
+    useEffect(() => {
+        const loadPermissions = async () => {
+            try {
+                const perms = await authService.getPermissions();
+                const categoryPerms = perms['categories'] || {};
+                setPermissions({
+                    view: categoryPerms.view || false,
+                    add: categoryPerms.add || false,
+                    edit: categoryPerms.edit || false,
+                    del: categoryPerms.del || false
+                });
+            } catch (error) {
+                console.error('Error loading permissions:', error);
+            }
+        };
+        loadPermissions();
+    }, []);
 
     const fetchCategories = useCallback(async () => {
         try {
@@ -272,30 +305,34 @@ const CategoryScreen = ({ navigation }) => {
                         <MaterialCommunityIcons name="menu" size={26} color="#fff" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Categories</Text>
-                    <TouchableOpacity
-                        onPress={() => {
-                            if (showAddModal) {
-                                setShowAddModal(false);
-                                setEditingCategory(null);
-                                setCategoryName('');
-                                setTimeSlots([]);
-                                setCategoryImage(null);
-                            } else {
-                                setEditingCategory(null);
-                                setCategoryName('');
-                                setTimeSlots([]);
-                                setCategoryImage(null);
-                                setShowAddModal(true);
-                            }
-                        }}
-                        style={styles.addButton}
-                    >
-                        <MaterialCommunityIcons
-                            name={showAddModal ? "close" : "plus"}
-                            size={26}
-                            color="#fff"
-                        />
-                    </TouchableOpacity>
+                    {permissions.add ? (
+                        <TouchableOpacity
+                            onPress={() => {
+                                if (showAddModal) {
+                                    setShowAddModal(false);
+                                    setEditingCategory(null);
+                                    setCategoryName('');
+                                    setTimeSlots([]);
+                                    setCategoryImage(null);
+                                } else {
+                                    setEditingCategory(null);
+                                    setCategoryName('');
+                                    setTimeSlots([]);
+                                    setCategoryImage(null);
+                                    setShowAddModal(true);
+                                }
+                            }}
+                            style={styles.addButton}
+                        >
+                            <MaterialCommunityIcons
+                                name={showAddModal ? "close" : "plus"}
+                                size={26}
+                                color="#fff"
+                            />
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={styles.addButton} />
+                    )}
                 </View>
             </LinearGradient>
 
@@ -422,6 +459,8 @@ const CategoryScreen = ({ navigation }) => {
                                 category={category}
                                 onEdit={handleEdit}
                                 onDelete={handleDelete}
+                                canEdit={permissions.edit}
+                                canDelete={permissions.del}
                             />
                         ))
                     )}

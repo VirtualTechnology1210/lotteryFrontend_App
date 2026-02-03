@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, memo, useEffect } from 'react';
 import {
     View,
     Text,
@@ -20,7 +20,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { categoryService } from '../services/categoryService';
 import { productService } from '../services/productService';
 import { salesService } from '../services/salesService';
-import { getImageUrl } from '../services';
+import { getImageUrl, authService } from '../services';
 
 // Memoized Category Card for better performance
 const CategoryCard = memo(({ category, index, isSelected, onPress }) => {
@@ -106,6 +106,14 @@ const SalesScreen = ({ navigation }) => {
     const [isLoadingProducts, setIsLoadingProducts] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
 
+    // Permission state
+    const [permissions, setPermissions] = useState({
+        view: false,
+        add: false,
+        edit: false,
+        del: false
+    });
+
     // Sale form state
     const [qty, setQty] = useState('1');
     const [desc, setDesc] = useState('');
@@ -116,6 +124,25 @@ const SalesScreen = ({ navigation }) => {
 
     // Categories to display based on expansion state
     const displayedCategories = showAllCategories ? categories : categories.slice(0, 3);
+
+    // Load permissions on mount
+    useEffect(() => {
+        const loadPermissions = async () => {
+            try {
+                const perms = await authService.getPermissions();
+                const salesPerms = perms['sales'] || {};
+                setPermissions({
+                    view: salesPerms.view || false,
+                    add: salesPerms.add || false,
+                    edit: salesPerms.edit || false,
+                    del: salesPerms.del || false
+                });
+            } catch (error) {
+                console.error('Error loading permissions:', error);
+            }
+        };
+        loadPermissions();
+    }, []);
 
     const fetchCategories = useCallback(async () => {
         try {
@@ -245,87 +272,100 @@ const SalesScreen = ({ navigation }) => {
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3a48c2" />
                 }
             >
-                {/* Categories Grid */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Select Category</Text>
-                    <View style={styles.categoryGrid}>
-                        {displayedCategories.map((category, index) => (
-                            <CategoryCard
-                                key={category.id}
-                                category={category}
-                                index={index}
-                                isSelected={selectedCategory?.id === category.id}
-                                onPress={() => handleCategorySelect(category)}
-                            />
-                        ))}
+                {!permissions.add ? (
+                    <View style={styles.noPermissionContainer}>
+                        <MaterialCommunityIcons name="lock-outline" size={80} color="#ddd" />
+                        <Text style={styles.noPermissionTitle}>No Permission</Text>
+                        <Text style={styles.noPermissionText}>
+                            You don't have permission to create sales.{'\n'}
+                            Please contact your administrator.
+                        </Text>
                     </View>
-
-                    {/* Show More / Show Less Button */}
-                    {categories.length > 3 && (
-                        <TouchableOpacity
-                            style={styles.showMoreButton}
-                            onPress={() => setShowAllCategories(!showAllCategories)}
-                        >
-                            <Text style={styles.showMoreText}>
-                                {showAllCategories ? 'Show Less' : 'Show More'}
-                            </Text>
-                            <MaterialCommunityIcons
-                                name={showAllCategories ? 'chevron-up' : 'chevron-down'}
-                                size={20}
-                                color="#3a48c2"
-                            />
-                        </TouchableOpacity>
-                    )}
-
-                    {categories.length === 0 && (
-                        <View style={styles.emptyState}>
-                            <MaterialCommunityIcons name="shape-outline" size={50} color="#ddd" />
-                            <Text style={styles.emptyText}>No categories available</Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Products Grid */}
-                {selectedCategory && (
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>Products in {selectedCategory.category_name}</Text>
-                            <TouchableOpacity onPress={() => {
-                                setSelectedCategory(null);
-                                setProducts([]);
-                            }}>
-                                <Text style={styles.clearText}>Clear</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        {isLoadingProducts ? (
-                            <View style={styles.loadingProducts}>
-                                <ActivityIndicator size="small" color="#3a48c2" />
-                                <Text style={styles.loadingText}>Loading products...</Text>
-                            </View>
-                        ) : products.length > 0 ? (
-                            <View style={styles.productGrid}>
-                                {products.map((product) => (
-                                    <TouchableOpacity
-                                        key={product.id}
-                                        style={styles.productCard}
-                                        onPress={() => handleProductSelect(product)}
-                                    >
-                                        <Text style={styles.productName} numberOfLines={2}>
-                                            {product.product_name}
-                                        </Text>
-                                        <Text style={styles.productCode}>{product.product_code}</Text>
-                                        <Text style={styles.productPrice}>₹{product.price}</Text>
-                                    </TouchableOpacity>
+                ) : (
+                    <>
+                        {/* Categories Grid */}
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Select Category</Text>
+                            <View style={styles.categoryGrid}>
+                                {displayedCategories.map((category, index) => (
+                                    <CategoryCard
+                                        key={category.id}
+                                        category={category}
+                                        index={index}
+                                        isSelected={selectedCategory?.id === category.id}
+                                        onPress={() => handleCategorySelect(category)}
+                                    />
                                 ))}
                             </View>
-                        ) : (
-                            <View style={styles.emptyState}>
-                                <MaterialCommunityIcons name="package-variant-closed" size={50} color="#ddd" />
-                                <Text style={styles.emptyText}>No products in this category</Text>
+
+                            {/* Show More / Show Less Button */}
+                            {categories.length > 3 && (
+                                <TouchableOpacity
+                                    style={styles.showMoreButton}
+                                    onPress={() => setShowAllCategories(!showAllCategories)}
+                                >
+                                    <Text style={styles.showMoreText}>
+                                        {showAllCategories ? 'Show Less' : 'Show More'}
+                                    </Text>
+                                    <MaterialCommunityIcons
+                                        name={showAllCategories ? 'chevron-up' : 'chevron-down'}
+                                        size={20}
+                                        color="#3a48c2"
+                                    />
+                                </TouchableOpacity>
+                            )}
+
+                            {categories.length === 0 && (
+                                <View style={styles.emptyState}>
+                                    <MaterialCommunityIcons name="shape-outline" size={50} color="#ddd" />
+                                    <Text style={styles.emptyText}>No categories available</Text>
+                                </View>
+                            )}
+                        </View>
+
+                        {/* Products Grid */}
+                        {selectedCategory && (
+                            <View style={styles.section}>
+                                <View style={styles.sectionHeader}>
+                                    <Text style={styles.sectionTitle}>Products in {selectedCategory.category_name}</Text>
+                                    <TouchableOpacity onPress={() => {
+                                        setSelectedCategory(null);
+                                        setProducts([]);
+                                    }}>
+                                        <Text style={styles.clearText}>Clear</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                {isLoadingProducts ? (
+                                    <View style={styles.loadingProducts}>
+                                        <ActivityIndicator size="small" color="#3a48c2" />
+                                        <Text style={styles.loadingText}>Loading products...</Text>
+                                    </View>
+                                ) : products.length > 0 ? (
+                                    <View style={styles.productGrid}>
+                                        {products.map((product) => (
+                                            <TouchableOpacity
+                                                key={product.id}
+                                                style={styles.productCard}
+                                                onPress={() => handleProductSelect(product)}
+                                            >
+                                                <Text style={styles.productName} numberOfLines={2}>
+                                                    {product.product_name}
+                                                </Text>
+                                                <Text style={styles.productCode}>{product.product_code}</Text>
+                                                <Text style={styles.productPrice}>₹{product.price}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                ) : (
+                                    <View style={styles.emptyState}>
+                                        <MaterialCommunityIcons name="package-variant-closed" size={50} color="#ddd" />
+                                        <Text style={styles.emptyText}>No products in this category</Text>
+                                    </View>
+                                )}
                             </View>
                         )}
-                    </View>
+                    </>
                 )}
             </ScrollView>
 
@@ -445,6 +485,26 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: '#F8F9FD',
+    },
+    noPermissionContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 100,
+        paddingHorizontal: 40,
+    },
+    noPermissionTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#666',
+        marginTop: 20,
+        marginBottom: 10,
+    },
+    noPermissionText: {
+        fontSize: 16,
+        color: '#999',
+        textAlign: 'center',
+        lineHeight: 24,
     },
     header: {
         paddingTop: Platform.OS === 'android' ? 20 : 20,

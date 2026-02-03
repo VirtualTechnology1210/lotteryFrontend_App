@@ -22,18 +22,30 @@ import { authService } from '../services';
 const { width: screenWidth } = Dimensions.get("window");
 
 // Memoized Transaction Item
-const TransactionItem = memo(({ item }) => (
-    <View style={styles.transactionCard}>
+const TransactionItem = memo(({ item, isLast }) => (
+    <View style={[styles.transactionCard, isLast && styles.lastTransactionCard]}>
         <View style={styles.transactionIconContainer}>
-            <MaterialCommunityIcons name="ticket-confirmation-outline" size={24} color="#3a48c2" />
+            <LinearGradient
+                colors={['#EEF0FF', '#E0E4FC']}
+                style={styles.iconGradient}
+            >
+                <MaterialCommunityIcons name="ticket-confirmation-outline" size={22} color="#3a48c2" />
+            </LinearGradient>
         </View>
         <View style={styles.transactionInfo}>
-            <Text style={styles.transactionTitle}>{item.product_name || `Order #${item.id}`}</Text>
-            <Text style={styles.transactionDate}>
-                {new Date(item.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            <Text style={styles.transactionTitle} numberOfLines={1}>
+                {item.product_name || `Order #${item.id}`}
             </Text>
+            <View style={styles.dateContainer}>
+                <MaterialCommunityIcons name="clock-outline" size={10} color="#888" style={{ marginRight: 3 }} />
+                <Text style={styles.transactionDate}>
+                    {new Date(item.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+            </View>
         </View>
-        <Text style={styles.transactionAmount}>+₹{item.total}</Text>
+        <View style={styles.amountContainer}>
+            <Text style={styles.transactionAmount}>+₹{item.total}</Text>
+        </View>
     </View>
 ));
 
@@ -123,14 +135,14 @@ const DashboardScreen = ({ navigation }) => {
             strokeWidth: "2",
             stroke: "#3a48c2"
         },
-        labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+        labelColor: (opacity = 1) => `rgba(100, 100, 100, ${opacity})`,
         style: {
             borderRadius: 16
         },
         propsForBackgroundLines: {
-            strokeDasharray: "", // solid lines
+            strokeDasharray: "5, 5",
             strokeWidth: 1,
-            stroke: "rgba(0,0,0,0.05)"
+            stroke: "rgba(0,0,0,0.1)"
         }
     };
 
@@ -153,16 +165,27 @@ const DashboardScreen = ({ navigation }) => {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
+                {/* Decorative Elements */}
+                <View style={styles.decorativeCircle1} />
+                <View style={styles.decorativeCircle2} />
+
                 <SafeAreaView>
                     <View style={styles.headerContent}>
-                        <TouchableOpacity style={styles.menuButton} onPress={() => navigation.openDrawer()}>
-                            <MaterialCommunityIcons name="menu" size={18} color="#fff" />
-                        </TouchableOpacity>
-                        <View>
-                            <Text style={styles.greetingText}>Hello, {userName}</Text>
-                            <Text style={styles.dateText}>
-                                {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })}
-                            </Text>
+                        <View style={styles.headerTopRow}>
+                            <TouchableOpacity style={styles.menuButton} onPress={() => navigation.openDrawer()}>
+                                <MaterialCommunityIcons name="menu" size={22} color="#fff" />
+                            </TouchableOpacity>
+                            <View style={styles.dateBadge}>
+                                <MaterialCommunityIcons name="calendar-month" size={12} color="#E0E0E0" />
+                                <Text style={styles.dateText}>
+                                    {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.welcomeContainer}>
+                            <Text style={styles.greetingText}>Hello, {userName.split(' ')[0]}!</Text>
+                            <Text style={styles.subGreetingText}>○  Lottery System</Text>
                         </View>
                     </View>
                 </SafeAreaView>
@@ -184,14 +207,14 @@ const DashboardScreen = ({ navigation }) => {
                             title="Total Sales"
                             value={`₹${reportData.totalSales}`}
                             icon="cash-multiple"
-                            colors={['#1836beff', '#1a3c86ff']}
+                            colors={['#3a48c2', '#2a38a0']} // Updated colors
                         />
                         <DashboardCard
                             style={styles.transactionCountCard}
                             title="Transactions"
                             value={reportData.totalTransactions.toString()}
                             icon="chart-timeline-variant"
-                            colors={['#1836beff', '#1a3c86ff']}
+                            colors={['#3a48c2', '#2a38a0']} // Updated colors
                         />
                     </View>
                 </View>
@@ -199,7 +222,11 @@ const DashboardScreen = ({ navigation }) => {
                 {/* Chart Section */}
                 <View style={styles.sectionContainer}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Sales Overview</Text>
+                        <View style={styles.titleContainer}>
+                            <View style={styles.titleIndicator} />
+                            <Text style={styles.sectionTitle}>Sales Trends</Text>
+                        </View>
+                      
                     </View>
 
                     <View style={styles.chartCard}>
@@ -216,7 +243,10 @@ const DashboardScreen = ({ navigation }) => {
                                 yAxisInterval={1}
                             />
                         ) : (
-                            <Text style={styles.noDataText}>No chart data available</Text>
+                            <View style={styles.noDataContainer}>
+                                <MaterialCommunityIcons name="chart-line-variant" size={40} color="#ddd" />
+                                <Text style={styles.noDataText}>No chart data available yet</Text>
+                            </View>
                         )}
                     </View>
                 </View>
@@ -224,20 +254,31 @@ const DashboardScreen = ({ navigation }) => {
                 {/* Recent Transactions Section */}
                 <View style={styles.sectionContainer}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Recent Transactions</Text>
-                        <TouchableOpacity onPress={() => navigation.navigate('Reports')}>
+                        <View style={styles.titleContainer}>
+                            <View style={[styles.titleIndicator, { backgroundColor: '#10B981' }]} />
+                            <Text style={styles.sectionTitle}>Recent Activity</Text>
+                        </View>
+                        <TouchableOpacity
+                            onPress={() => navigation.navigate('Reports')}
+                            style={styles.seeAllButton}
+                        >
                             <Text style={styles.seeAllText}>See All</Text>
+                            <MaterialCommunityIcons name="chevron-right" size={16} color="#3a48c2" />
                         </TouchableOpacity>
                     </View>
 
                     <View style={styles.transactionsList}>
                         {reportData.recentTransactions.map((item, index) => (
-                            <TransactionItem key={index} item={item} />
+                            <TransactionItem
+                                key={index}
+                                item={item}
+                                isLast={index === reportData.recentTransactions.length - 1}
+                            />
                         ))}
 
                         {reportData.recentTransactions.length === 0 && (
                             <View style={styles.emptyState}>
-                                <MaterialCommunityIcons name="clipboard-text-outline" size={50} color="#ddd" />
+                                <MaterialCommunityIcons name="clipboard-text-outline" size={50} color="#E0E7FF" />
                                 <Text style={styles.emptyText}>No recent transactions</Text>
                             </View>
                         )}
@@ -245,19 +286,13 @@ const DashboardScreen = ({ navigation }) => {
                 </View>
 
                 {/* Bottom Padding */}
-                <View style={{ height: 30 }} />
+                <View style={{ height: 40 }} />
             </ScrollView>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    totalSalesCard: {
-        width: '58%',
-    },
-    transactionCountCard: {
-        width: '40%',
-    },
     container: {
         flex: 1,
         backgroundColor: '#F8F9FD',
@@ -270,100 +305,163 @@ const styles = StyleSheet.create({
     },
     headerBackground: {
         paddingBottom: 60, // Height for overlapping content
-        borderBottomLeftRadius: 30,
-        borderBottomRightRadius: 30,
+        borderBottomLeftRadius: 35,
+        borderBottomRightRadius: 35,
+        position: 'relative',
+        overflow: 'hidden',
+    },
+    decorativeCircle1: {
+        position: 'absolute',
+        width: 200,
+        height: 200,
+        borderRadius: 100,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: -50,
+        right: -50,
+    },
+    decorativeCircle2: {
+        position: 'absolute',
+        width: 150,
+        height: 150,
+        borderRadius: 75,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: 40,
+        left: -40,
     },
     headerContent: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
         paddingHorizontal: 24,
         paddingTop: Platform.OS === 'android' ? 20 : 10,
         paddingBottom: 20,
     },
+    headerTopRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    welcomeContainer: {
+        paddingLeft: 4,
+    },
     greetingText: {
-        fontSize: 26,
+        fontSize: 28,
         fontWeight: 'bold',
         color: '#FFFFFF',
-        marginBottom: 4,
+        marginBottom: 6,
+        letterSpacing: 0.5,
+    },
+    subGreetingText: {
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.8)',
+        fontWeight: '500',
+    },
+    dateBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     dateText: {
-        fontSize: 14,
-        color: 'rgba(255, 255, 255, 0.9)',
-        fontWeight: '500',
-        textAlign: 'right',
+        fontSize: 12,
+        color: '#fff',
+        fontWeight: '600',
+        marginLeft: 4,
     },
     menuButton: {
         backgroundColor: 'rgba(255,255,255,0.2)',
         padding: 10,
-        borderRadius: 102,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     scrollView: {
         flex: 1,
-        marginTop: -55, // Pull up to overlap header
+        marginTop: -60, // Pull up to overlap header
     },
     scrollContent: {
         paddingHorizontal: 20,
         paddingTop: 10,
     },
     statsContainer: {
-        marginBottom: 20,
+        marginBottom: 24,
     },
     row: {
         flexDirection: 'row',
         justifyContent: 'space-between',
     },
+    totalSalesCard: {
+        width: '61%',
+    },
+    transactionCountCard: {
+        width: '37%',
+    },
     sectionContainer: {
-        marginBottom: 25,
+        marginBottom: 28,
     },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 15,
-        paddingHorizontal: 5,
+        marginBottom: 16,
+        paddingHorizontal: 4,
+    },
+    titleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    titleIndicator: {
+        width: 4,
+        height: 18,
+        backgroundColor: '#3a48c2',
+        borderRadius: 2,
+        marginRight: 8,
     },
     sectionTitle: {
         fontSize: 18,
         fontWeight: '800',
         color: '#1a1a1a',
-        letterSpacing: 0.5,
+        letterSpacing: 0.3,
     },
-    filterButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#fff',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: '#EDEFF5',
+    periodBadge: {
+        backgroundColor: '#EEF0FF',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
     },
-    filterText: {
-        fontSize: 13,
-        color: '#666',
-        marginRight: 4,
-        fontWeight: '500',
+    periodText: {
+        fontSize: 11,
+        color: '#3a48c2',
+        fontWeight: '600',
     },
     chartCard: {
         backgroundColor: '#FFFFFF',
         borderRadius: 24,
-        padding: 15,
-        elevation: 8,
+        padding: 16,
+        elevation: 4,
         shadowColor: '#3a48c2',
-        shadowOffset: { width: 0, height: 10 },
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.08,
-        shadowRadius: 20,
+        shadowRadius: 16,
         alignItems: 'center',
     },
     chart: {
-        marginVertical: 8,
+        marginVertical: 4,
         borderRadius: 16,
+    },
+    seeAllButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 4,
+        paddingLeft: 8,
     },
     seeAllText: {
         color: '#3a48c2',
         fontWeight: '700',
-        fontSize: 14,
+        fontSize: 13,
+        marginRight: 2,
     },
     transactionsList: {
         backgroundColor: '#FFFFFF',
@@ -371,57 +469,82 @@ const styles = StyleSheet.create({
         padding: 20,
         elevation: 4,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.05,
-        shadowRadius: 10,
+        shadowRadius: 12,
     },
     transactionCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 20,
-        paddingBottom: 0, // Removed padding for cleaner list
+        marginBottom: 16,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F5F7FA',
+    },
+    lastTransactionCard: {
+        marginBottom: 0,
+        paddingBottom: 0,
+        borderBottomWidth: 0,
     },
     transactionIconContainer: {
-        width: 48,
-        height: 48,
+        marginRight: 16,
+    },
+    iconGradient: {
+        width: 44,
+        height: 44,
         borderRadius: 14,
-        backgroundColor: '#EEF0FF',
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 16,
     },
     transactionInfo: {
         flex: 1,
     },
     transactionTitle: {
-        fontSize: 16,
-        fontWeight: 'bold',
+        fontSize: 15,
+        fontWeight: '700',
         color: '#1a1a1a',
         marginBottom: 4,
     },
+    dateContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
     transactionDate: {
-        fontSize: 12,
+        fontSize: 11,
         color: '#9E9E9E',
         fontWeight: '500',
     },
+    amountContainer: {
+        alignItems: 'flex-end',
+        backgroundColor: '#F0FDF4',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
     transactionAmount: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#00C853', // Material green accent
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#15803d',
     },
     emptyState: {
         alignItems: 'center',
-        paddingVertical: 20,
+        paddingVertical: 30,
     },
     emptyText: {
-        marginTop: 10,
+        marginTop: 12,
         color: '#999',
-        fontSize: 15,
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    noDataContainer: {
+        height: 180,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     noDataText: {
         color: '#999',
-        marginVertical: 20,
+        marginTop: 10,
+        fontSize: 14,
     }
 });
 
