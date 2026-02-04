@@ -22,77 +22,222 @@ import { authService } from '../services';
 const { width: screenWidth } = Dimensions.get("window");
 
 // Memoized Transaction Item
-const TransactionItem = memo(({ item, isLast }) => (
-    <View style={[styles.transactionCard, isLast && styles.lastTransactionCard]}>
-        <View style={styles.transactionIconContainer}>
-            <LinearGradient
-                colors={['#EEF0FF', '#E0E4FC']}
-                style={styles.iconGradient}
-            >
-                <MaterialCommunityIcons name="ticket-confirmation-outline" size={22} color="#3a48c2" />
-            </LinearGradient>
-        </View>
-        <View style={styles.transactionInfo}>
-            <Text style={styles.transactionTitle} numberOfLines={1}>
-                {item.product_name || `Order #${item.id}`}
-            </Text>
-            <View style={styles.dateContainer}>
-                <MaterialCommunityIcons name="clock-outline" size={10} color="#888" style={{ marginRight: 3 }} />
-                <Text style={styles.transactionDate}>
-                    {new Date(item.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+const TransactionItem = memo(({ item, isLast }) => {
+    const [expanded, setExpanded] = useState(false);
+
+    if (item.isGroup) {
+        return (
+            <View style={[styles.transactionCard, isLast && styles.lastTransactionCard, { flexDirection: 'column', alignItems: 'stretch' }]}>
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setExpanded(!expanded)}
+                    style={{ flexDirection: 'row', alignItems: 'center' }}
+                >
+                    <View style={styles.transactionIconContainer}>
+                        <LinearGradient
+                            colors={['#EEF0FF', '#E0E4FC']}
+                            style={styles.iconGradient}
+                        >
+                            <MaterialCommunityIcons
+                                name="basket-outline"
+                                size={22}
+                                color="#3a48c2"
+                            />
+                        </LinearGradient>
+                    </View>
+                    <View style={styles.transactionInfo}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Text style={styles.transactionTitle} numberOfLines={1}>
+                                {item.items.length} - Items
+                            </Text>
+                            <MaterialCommunityIcons
+                                name={expanded ? "chevron-up" : "chevron-down"}
+                                size={16}
+                                color="#888"
+                                style={{ marginLeft: 4 }}
+                            />
+                        </View>
+                        <View style={styles.dateContainer}>
+                            <MaterialCommunityIcons name="clock-outline" size={10} color="#888" style={{ marginRight: 3 }} />
+                            <Text style={styles.transactionDate}>
+                                {new Date(item.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={styles.amountContainer}>
+                        <Text style={styles.transactionAmount}>+₹{parseFloat(item.total).toFixed(2)}</Text>
+                    </View>
+                </TouchableOpacity>
+
+                {expanded && (
+                    <View style={styles.groupDetails}>
+                        {item.items.map((subItem, idx) => (
+                            <View key={idx} style={styles.subItemRow}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.subItemName}>{subItem.product_name}</Text>
+                                    <Text style={styles.subItemMeta}>
+                                        {subItem.qty} x ₹{subItem.price || subItem.unit_price || 0}
+                                    </Text>
+                                </View>
+                                <Text style={styles.subItemTotal}>₹{parseFloat(subItem.total).toFixed(2)}</Text>
+                            </View>
+                        ))}
+                    </View>
+                )}
+            </View>
+        );
+    }
+
+    return (
+        <View style={[styles.transactionCard, isLast && styles.lastTransactionCard]}>
+            <View style={styles.transactionIconContainer}>
+                <LinearGradient
+                    colors={['#EEF0FF', '#E0E4FC']}
+                    style={styles.iconGradient}
+                >
+                    <MaterialCommunityIcons name="ticket-confirmation-outline" size={22} color="#3a48c2" />
+                </LinearGradient>
+            </View>
+            <View style={styles.transactionInfo}>
+                <Text style={styles.transactionTitle} numberOfLines={1}>
+                    {item.product_name || `Order #${item.id}`}
                 </Text>
+                <View style={styles.dateContainer}>
+                    <MaterialCommunityIcons name="clock-outline" size={10} color="#888" style={{ marginRight: 3 }} />
+                    <Text style={styles.transactionDate}>
+                        {new Date(item.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                </View>
+            </View>
+            <View style={styles.amountContainer}>
+                <Text style={styles.transactionAmount}>+₹{parseFloat(item.total).toFixed(2)}</Text>
             </View>
         </View>
-        <View style={styles.amountContainer}>
-            <Text style={styles.transactionAmount}>+₹{item.total}</Text>
-        </View>
-    </View>
-));
+    );
+});
 
-const DashboardScreen = ({ navigation }) => {
-    const [isLoading, setIsLoading] = useState(true);
+const DashboardScreen = ({ navigation, route }) => {
+    const prefetchedData = route.params?.dashboardData;
+    const [isLoading, setIsLoading] = useState(!prefetchedData);
     const [refreshing, setRefreshing] = useState(false);
     const [userName, setUserName] = useState('');
     const [reportData, setReportData] = useState({
         totalSales: 0,
         totalTransactions: 0,
         averageSale: 0,
-        chartData: null,
+        chartData: {
+            labels: ['Loading...'],
+            datasets: [{ data: [0] }]
+        },
         recentTransactions: []
     });
 
-    const fetchDashboardData = useCallback(async () => {
+    const fetchDashboardData = useCallback(async (existingData = null) => {
         try {
+            // Get user name separately
             const { user } = await authService.getAuthData();
             if (user) {
                 setUserName(user.name);
             }
 
-            const response = await reportService.getSalesReport({ limit: 10 });
+            // Use prefetched data if passed, otherwise fetch fresh
+            const data = existingData || (await reportService.getSalesReport({ limit: 100 }))?.data;
 
-            if (response && response.data) {
-                const { summary, report } = response.data;
+            if (data) {
+                const { summary, report } = data;
                 const sales = report || [];
 
-                // Process chart data (last 7 items)
-                const chartLabels = sales.slice(0, 7).map(item => {
-                    const d = new Date(item.created_at);
-                    return `${d.getDate()}/${d.getMonth() + 1}`;
-                }).reverse();
+                // Group transactions close in time (2 seconds window)
+                const groupTransactions = (transactions) => {
+                    if (!transactions || transactions.length === 0) return [];
 
-                // Use 'total' field (not 'price') and ensure valid numbers
-                const chartValues = sales.slice(0, 7).map(item => {
-                    const value = parseFloat(item.total || item.price || 0);
-                    return isNaN(value) ? 0 : value;
-                }).reverse();
+                    // Ensure sorted by time descending
+                    const sorted = [...transactions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-                // Ensure we have at least one valid data point
+                    const grouped = [];
+                    if (sorted.length === 0) return [];
+
+                    let currentGroup = {
+                        ...sorted[0],
+                        total: parseFloat(sorted[0].total),
+                        items: [sorted[0]],
+                        isGroup: false
+                    };
+
+                    for (let i = 1; i < sorted.length; i++) {
+                        const item = sorted[i];
+                        const lastItemInGroup = currentGroup.items[currentGroup.items.length - 1]; // Closest in time to this one
+
+                        const timeDiff = Math.abs(new Date(lastItemInGroup.created_at) - new Date(item.created_at));
+
+                        // If within 2 seconds, assume same batch
+                        if (timeDiff < 2000) {
+                            currentGroup.items.push(item);
+                            currentGroup.total += parseFloat(item.total);
+                            currentGroup.isGroup = true;
+                        } else {
+                            // Push finished group
+                            grouped.push(currentGroup);
+                            // Start new group
+                            currentGroup = {
+                                ...item,
+                                total: parseFloat(item.total),
+                                items: [item],
+                                isGroup: false
+                            };
+                        }
+                    }
+                    grouped.push(currentGroup);
+                    return grouped;
+                };
+
+                const groupedSales = groupTransactions(sales);
+
+                // Sales Trend Chart - Group by Date
+                const salesByDate = {};
+                sales.forEach(item => {
+                    const date = new Date(item.created_at);
+                    const dateKey = date.toDateString();
+
+                    if (!salesByDate[dateKey]) {
+                        salesByDate[dateKey] = {
+                            date: date,
+                            total: 0
+                        };
+                    }
+                    salesByDate[dateKey].total += parseFloat(item.total || 0);
+                });
+
+                // Get last 7 days with data
+                const entries = Object.entries(salesByDate)
+                    .sort((a, b) => b[1].date - a[1].date)
+                    .slice(0, 7)
+                    .reverse();
+
+                // Simple day labels
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const chartLabels = entries.map(([_, data]) => {
+                    const date = new Date(data.date);
+                    date.setHours(0, 0, 0, 0);
+                    const diffDays = Math.floor((today - date) / (1000 * 60 * 60 * 24));
+
+                    if (diffDays === 0) return 'Today';
+                    if (diffDays === 1) return 'Yesterday';
+
+                    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    return dayNames[date.getDay()];
+                });
+
+                const chartValues = entries.map(([_, data]) => data.total);
+
                 const validChartValues = chartValues.length > 0 && chartValues.some(v => v > 0)
                     ? chartValues
                     : [0];
                 const validChartLabels = chartLabels.length > 0
                     ? chartLabels
-                    : ['No Data'];
+                    : ['No Sales'];
 
                 setReportData({
                     totalSales: parseFloat(summary?.total_amount || 0).toFixed(2),
@@ -102,7 +247,7 @@ const DashboardScreen = ({ navigation }) => {
                         labels: validChartLabels,
                         datasets: [{ data: validChartValues }]
                     },
-                    recentTransactions: sales.slice(0, 5)
+                    recentTransactions: groupedSales.slice(0, 5)
                 });
             }
         } catch (error) {
@@ -113,9 +258,26 @@ const DashboardScreen = ({ navigation }) => {
         }
     }, []);
 
+    // Initial load on mount - check for prefetched data
     useEffect(() => {
-        fetchDashboardData();
-    }, [fetchDashboardData]);
+        if (prefetchedData) {
+            fetchDashboardData(prefetchedData);
+        } else {
+            fetchDashboardData();
+        }
+    }, [prefetchedData, fetchDashboardData]);
+
+    // Auto-refresh when screen comes into focus
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('focus', () => {
+            // Only refresh if not initial load (component already mounted)
+            if (!isLoading) {
+                fetchDashboardData();
+            }
+        });
+
+        return unsubscribe;
+    }, [navigation, isLoading]);
 
     const onRefresh = useCallback(() => {
         setRefreshing(true);
@@ -158,135 +320,133 @@ const DashboardScreen = ({ navigation }) => {
         <View style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor="#3a48c2" />
 
-            {/* Header Background */}
-            <LinearGradient
-                colors={['#3a48c2', '#2a38a0', '#192f6a']}
-                style={styles.headerBackground}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-            >
-                {/* Decorative Elements */}
-                <View style={styles.decorativeCircle1} />
-                <View style={styles.decorativeCircle2} />
-
-                <SafeAreaView>
-                    <View style={styles.headerContent}>
-                        <View style={styles.headerTopRow}>
-                            <TouchableOpacity style={styles.menuButton} onPress={() => navigation.openDrawer()}>
-                                <MaterialCommunityIcons name="menu" size={22} color="#fff" />
-                            </TouchableOpacity>
-                            <View style={styles.dateBadge}>
-                                <MaterialCommunityIcons name="calendar-month" size={12} color="#E0E0E0" />
-                                <Text style={styles.dateText}>
-                                    {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
-                                </Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.welcomeContainer}>
-                            <Text style={styles.greetingText}>Hello, {userName.split(' ')[0]}!</Text>
-                            <Text style={styles.subGreetingText}>○  Lottery System</Text>
-                        </View>
-                    </View>
-                </SafeAreaView>
-            </LinearGradient>
-
             <ScrollView
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={{ paddingBottom: 40 }}
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3a48c2" />
                 }
                 showsVerticalScrollIndicator={false}
-                style={styles.scrollView}
             >
-                {/* Stats Cards - Overlapping the Header */}
-                <View style={styles.statsContainer}>
-                    <View style={styles.row}>
-                        <DashboardCard
-                            style={styles.totalSalesCard}
-                            title="Total Sales"
-                            value={`₹${reportData.totalSales}`}
-                            icon="cash-multiple"
-                            colors={['#3a48c2', '#2a38a0']} // Updated colors
-                        />
-                        <DashboardCard
-                            style={styles.transactionCountCard}
-                            title="Transactions"
-                            value={reportData.totalTransactions.toString()}
-                            icon="chart-timeline-variant"
-                            colors={['#3a48c2', '#2a38a0']} // Updated colors
-                        />
-                    </View>
-                </View>
+                {/* Header Background */}
+                <LinearGradient
+                    colors={['#3a48c2', '#2a38a0', '#192f6a']}
+                    style={styles.headerBackground}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                >
+                    {/* Decorative Elements */}
+                    <View style={styles.decorativeCircle1} />
+                    <View style={styles.decorativeCircle2} />
 
-                {/* Chart Section */}
-                <View style={styles.sectionContainer}>
-                    <View style={styles.sectionHeader}>
-                        <View style={styles.titleContainer}>
-                            <View style={styles.titleIndicator} />
-                            <Text style={styles.sectionTitle}>Sales Trends</Text>
-                        </View>
-                      
-                    </View>
-
-                    <View style={styles.chartCard}>
-                        {reportData.chartData ? (
-                            <LineChart
-                                data={reportData.chartData}
-                                width={screenWidth - 48} // Padding adjustments
-                                height={220}
-                                chartConfig={chartConfig}
-                                bezier
-                                style={styles.chart}
-                                withVerticalLines={false}
-                                withHorizontalLines={true}
-                                yAxisInterval={1}
-                            />
-                        ) : (
-                            <View style={styles.noDataContainer}>
-                                <MaterialCommunityIcons name="chart-line-variant" size={40} color="#ddd" />
-                                <Text style={styles.noDataText}>No chart data available yet</Text>
+                    <SafeAreaView>
+                        <View style={styles.headerContent}>
+                            <View style={styles.headerTopRow}>
+                                <TouchableOpacity style={styles.menuButton} onPress={() => navigation.openDrawer()}>
+                                    <MaterialCommunityIcons name="menu" size={22} color="#fff" />
+                                </TouchableOpacity>
+                                <View style={styles.dateBadge}>
+                                    <MaterialCommunityIcons name="calendar-month" size={12} color="#E0E0E0" />
+                                    <Text style={styles.dateText}>
+                                        {new Date().toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                    </Text>
+                                </View>
                             </View>
-                        )}
-                    </View>
-                </View>
 
-                {/* Recent Transactions Section */}
-                <View style={styles.sectionContainer}>
-                    <View style={styles.sectionHeader}>
-                        <View style={styles.titleContainer}>
-                            <View style={[styles.titleIndicator, { backgroundColor: '#10B981' }]} />
-                            <Text style={styles.sectionTitle}>Recent Activity</Text>
-                        </View>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('Reports')}
-                            style={styles.seeAllButton}
-                        >
-                            <Text style={styles.seeAllText}>See All</Text>
-                            <MaterialCommunityIcons name="chevron-right" size={16} color="#3a48c2" />
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.transactionsList}>
-                        {reportData.recentTransactions.map((item, index) => (
-                            <TransactionItem
-                                key={index}
-                                item={item}
-                                isLast={index === reportData.recentTransactions.length - 1}
-                            />
-                        ))}
-
-                        {reportData.recentTransactions.length === 0 && (
-                            <View style={styles.emptyState}>
-                                <MaterialCommunityIcons name="clipboard-text-outline" size={50} color="#E0E7FF" />
-                                <Text style={styles.emptyText}>No recent transactions</Text>
+                            <View style={styles.welcomeContainer}>
+                                <Text style={styles.greetingText}>Hello, {userName.split(' ')[0]}!</Text>
+                                <Text style={styles.subGreetingText}>○  Lottery System</Text>
                             </View>
-                        )}
+                        </View>
+                    </SafeAreaView>
+                </LinearGradient>
+
+                <View style={styles.scrollContent}>
+                    {/* Stats Cards - Overlapping the Header */}
+                    <View style={[styles.statsContainer, { marginTop: -50 }]}>
+                        <View style={styles.row}>
+                            <DashboardCard
+                                style={styles.totalSalesCard}
+                                title="Total Sales"
+                                value={`₹${reportData.totalSales}`}
+                                icon="cash-multiple"
+                                colors={['#3a48c2', '#2a38a0']} // Updated colors
+                            />
+                            <DashboardCard
+                                style={styles.transactionCountCard}
+                                title="Transactions"
+                                value={reportData.totalTransactions.toString()}
+                                icon="chart-timeline-variant"
+                                colors={['#3a48c2', '#2a38a0']} // Updated colors
+                            />
+                        </View>
+                    </View>
+
+                    {/* Chart Section */}
+                    <View style={styles.sectionContainer}>
+                        <View style={styles.sectionHeader}>
+                            <View style={styles.titleContainer}>
+                                <View style={styles.titleIndicator} />
+                                <Text style={styles.sectionTitle}>Sales Trends</Text>
+                            </View>
+
+                        </View>
+
+                        <View style={styles.chartCard}>
+                            {reportData.chartData ? (
+                                <LineChart
+                                    data={reportData.chartData}
+                                    width={screenWidth - 48} // Padding adjustments
+                                    height={220}
+                                    chartConfig={chartConfig}
+                                    bezier
+                                    style={styles.chart}
+                                    withVerticalLines={false}
+                                    withHorizontalLines={true}
+                                    yAxisInterval={1}
+                                />
+                            ) : (
+                                <View style={styles.noDataContainer}>
+                                    <MaterialCommunityIcons name="chart-line-variant" size={40} color="#ddd" />
+                                    <Text style={styles.noDataText}>No chart data available yet</Text>
+                                </View>
+                            )}
+                        </View>
+                    </View>
+
+                    {/* Recent Transactions Section */}
+                    <View style={styles.sectionContainer}>
+                        <View style={styles.sectionHeader}>
+                            <View style={styles.titleContainer}>
+                                <View style={[styles.titleIndicator, { backgroundColor: '#10B981' }]} />
+                                <Text style={styles.sectionTitle}>Recent Activity</Text>
+                            </View>
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('Reports')}
+                                style={styles.seeAllButton}
+                            >
+                                <Text style={styles.seeAllText}>See All</Text>
+                                <MaterialCommunityIcons name="chevron-right" size={16} color="#3a48c2" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.transactionsList}>
+                            {reportData.recentTransactions.map((item, index) => (
+                                <TransactionItem
+                                    key={index}
+                                    item={item}
+                                    isLast={index === reportData.recentTransactions.length - 1}
+                                />
+                            ))}
+
+                            {reportData.recentTransactions.length === 0 && (
+                                <View style={styles.emptyState}>
+                                    <MaterialCommunityIcons name="clipboard-text-outline" size={50} color="#E0E7FF" />
+                                    <Text style={styles.emptyText}>No recent transactions</Text>
+                                </View>
+                            )}
+                        </View>
                     </View>
                 </View>
-
-                {/* Bottom Padding */}
-                <View style={{ height: 40 }} />
             </ScrollView>
         </View>
     );
@@ -371,7 +531,7 @@ const styles = StyleSheet.create({
         marginLeft: 4,
     },
     menuButton: {
-        backgroundColor: 'rgba(255,255,255,0.2)',
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
         padding: 10,
         borderRadius: 52,
         borderWidth: 1,
@@ -379,7 +539,6 @@ const styles = StyleSheet.create({
     },
     scrollView: {
         flex: 1,
-        marginTop: -60, // Pull up to overlap header
     },
     scrollContent: {
         paddingHorizontal: 20,
@@ -545,7 +704,35 @@ const styles = StyleSheet.create({
         color: '#999',
         marginTop: 10,
         fontSize: 14,
-    }
+    },
+    groupDetails: {
+        marginTop: 12,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#f0f0f0',
+        paddingLeft: 60, // Indent to align with text
+    },
+    subItemRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 8,
+    },
+    subItemName: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#333',
+    },
+    subItemMeta: {
+        fontSize: 11,
+        color: '#888',
+        marginTop: 1,
+    },
+    subItemTotal: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: '#15803d',
+    },
 });
 
 export default DashboardScreen;

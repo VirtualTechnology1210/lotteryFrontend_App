@@ -17,10 +17,10 @@ export const getImageUrl = (path) => {
     return `${SERVER_URL}${path}`;
 };
 
-// Create axios instance
+// Create axios instance with optimized timeout
 const apiClient = axios.create({
     baseURL: BASE_URL,
-    timeout: 10000,
+    timeout: 5000, // Reduced from 10s to 5s for faster failure detection
     headers: {
         'Content-Type': 'application/json',
     },
@@ -70,8 +70,11 @@ export const authService = {
     },
 
     saveAuthData: async (token, user) => {
-        await AsyncStorage.setItem('userToken', token);
-        await AsyncStorage.setItem('userProfile', JSON.stringify(user));
+        // Use multiSet for parallel storage - faster than sequential setItem
+        await AsyncStorage.multiSet([
+            ['userToken', token],
+            ['userProfile', JSON.stringify(user)]
+        ]);
     },
 
     getAuthData: async () => {

@@ -252,14 +252,18 @@ const UserScreen = ({ navigation }) => {
         <View style={styles.container}>
             {/* Header */}
             <LinearGradient
-                colors={['#3a48c2', '#2a38a0']}
-                style={styles.header}
+                colors={['#3a48c2', '#2a38a0', '#192f6a']}
+                style={styles.headerBackground}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
+                {/* Decorative Elements */}
+                <View style={styles.decorativeCircle1} />
+                <View style={styles.decorativeCircle2} />
+
                 <View style={styles.headerContent}>
                     <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
-                        <MaterialCommunityIcons name="menu" size={26} color="#fff" />
+                        <MaterialCommunityIcons name="menu" size={24} color="#fff" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Users</Text>
                     <TouchableOpacity
@@ -268,7 +272,7 @@ const UserScreen = ({ navigation }) => {
                     >
                         <MaterialCommunityIcons
                             name={showAddModal ? "close" : "plus"}
-                            size={26}
+                            size={28}
                             color="#fff"
                         />
                     </TouchableOpacity>
@@ -399,26 +403,60 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         backgroundColor: '#F8F9FD',
     },
-    header: {
+    headerBackground: {
         paddingTop: Platform.OS === 'android' ? 20 : 20,
-        paddingBottom: 10,
+        paddingBottom: 26,
         paddingHorizontal: 20,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        marginBottom: 12,
+        position: 'relative',
+        overflow: 'hidden',
+        zIndex: 1,
+    },
+    decorativeCircle1: {
+        position: 'absolute',
+        width: 200,
+        height: 200,
+        borderRadius: 100,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: -50,
+        right: -50,
+    },
+    decorativeCircle2: {
+        position: 'absolute',
+        width: 150,
+        height: 150,
+        borderRadius: 75,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: 40,
+        left: -40,
     },
     headerContent: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginTop: 10,
     },
     menuButton: {
-        padding: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        padding: 10,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     headerTitle: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: 'bold',
         color: '#fff',
+        letterSpacing: 0.5,
     },
     addButton: {
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
         padding: 8,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     scrollView: {
         flex: 1,

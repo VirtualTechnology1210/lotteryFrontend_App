@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#F8F9FD',
     },
     logoutButton: {
-        borderRadius: 16,
+        borderRadius: 36,
         overflow: 'hidden',
         elevation: 4,
         shadowColor: '#FF5252',

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
     View,
     Text,
@@ -14,56 +15,152 @@ import LinearGradient from 'react-native-linear-gradient';
 import { reportService } from '../services/reportService';
 
 // Memoized Report Item for FlatList performance
-const ReportItem = memo(({ item, formatDateTime }) => (
-    <View style={styles.reportCard}>
-        <View style={styles.reportHeader}>
-            <View style={styles.headerLeft}>
-                <Text style={styles.productName}>{item.product_name}</Text>
-                {item.product_code && (
-                    <View style={styles.codeBadge}>
-                        <Text style={styles.codeText}>{item.product_code}</Text>
+const ReportItem = memo(({ item, formatDateTime, navigation }) => {
+    const [expanded, setExpanded] = useState(false);
+
+    const handleEditSingle = (saleItem) => {
+        navigation.navigate('SaleEdit', {
+            saleId: saleItem.id,
+            saleData: saleItem,
+            isMultiple: false,
+        });
+    };
+
+    const handleEditGroup = () => {
+        navigation.navigate('SaleEdit', {
+            isMultiple: true,
+            salesItems: item.items,
+            groupTotal: item.total,
+        });
+    };
+
+    if (item.isGroup) {
+        return (
+            <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setExpanded(!expanded)}
+                style={styles.reportCard}
+            >
+                <View style={styles.reportHeader}>
+                    <View style={styles.headerLeft}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                            <MaterialCommunityIcons name="basket-outline" size={20} color="#3a48c2" style={{ marginRight: 6 }} />
+                            <Text style={styles.productName}>{item.items.length} - Items </Text>
+                        </View>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.totalAmount}>₹{item.total.toFixed(2)}</Text>
+                    </View>
+                </View>
+
+                {expanded && (
+                    <View style={styles.groupDetails}>
+                        <View style={styles.divider} />
+                        {item.items.map((subItem, idx) => (
+                            <TouchableOpacity
+                                key={idx}
+                                style={styles.subItemRow}
+                                onPress={() => handleEditSingle(subItem)}
+                                activeOpacity={0.7}
+                            >
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.subItemName}>{subItem.product_name}</Text>
+                                    <Text style={styles.subItemMeta}>
+                                        {subItem.qty} x ₹{subItem.unit_price ? subItem.unit_price.toFixed(2) : '0.00'}
+                                    </Text>
+                                    {subItem.desc ? (
+                                        <Text style={styles.subItemDesc} numberOfLines={1}>Note: {subItem.desc}</Text>
+                                    ) : null}
+                                </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <Text style={styles.subItemTotal}>₹{parseFloat(subItem.total).toFixed(2)}</Text>
+                                    <MaterialCommunityIcons name="pencil-outline" size={14} color="#3a48c2" />
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                )}
+
+                <View style={styles.reportFooter}>
+                    <View style={styles.metaRow}>
+                        <MaterialCommunityIcons name="clock-outline" size={14} color="#888" />
+                        <Text style={styles.footerText}>{formatDateTime(item.created_at)}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 12, color: '#3a48c2', marginRight: 4 }}>
+                                {expanded ? 'Hide Details' : 'View Details'}
+                            </Text>
+                            <MaterialCommunityIcons
+                                name={expanded ? "chevron-up" : "chevron-down"}
+                                size={20}
+                                color="#3a48c2"
+                            />
+                        </View>
+                    </View>
+                </View>
+            </TouchableOpacity>
+        );
+    }
+
+    return (
+        <View style={styles.reportCard}>
+            <View style={styles.reportHeader}>
+                <View style={styles.headerLeft}>
+                    <Text style={styles.productName}>{item.product_name}</Text>
+                    {item.product_code && (
+                        <View style={styles.codeBadge}>
+                            <Text style={styles.codeText}>{item.product_code}</Text>
+                        </View>
+                    )}
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.totalAmount}>₹{parseFloat(item.total).toFixed(2)}</Text>
+                </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <View style={styles.reportDetails}>
+                <View style={styles.detailRow}>
+                    <View style={styles.detailItem}>
+                        <Text style={styles.detailLabel}>Unit Price</Text>
+                        <Text style={styles.detailValue}>₹{item.unit_price ? item.unit_price.toFixed(2) : '0.00'}</Text>
+                    </View>
+                    <View style={[styles.detailItem, { alignItems: 'center' }]}>
+                        <Text style={styles.detailLabel}>Quantity</Text>
+                        <Text style={styles.detailValue}>{item.qty}</Text>
+                    </View>
+                    <View style={[styles.detailItem, { alignItems: 'flex-end' }]}>
+                        <Text style={styles.detailLabel}>Created By</Text>
+                        <Text style={styles.userText}>{item.created_by || 'Unknown'}</Text>
+                    </View>
+                </View>
+
+                {item.desc && (
+                    <View style={styles.descContainer}>
+                        <Text style={styles.descLabel}>Notes:</Text>
+                        <Text style={styles.descText}>{item.desc}</Text>
                     </View>
                 )}
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.totalAmount}>₹{item.total.toFixed(2)}</Text>
+
+            <View style={styles.reportFooter}>
+                <View style={styles.metaRow}>
+                    <MaterialCommunityIcons name="clock-outline" size={14} color="#888" />
+                    <Text style={styles.footerText}>{formatDateTime(item.created_at)}</Text>
+                </View>
+                <TouchableOpacity
+                    onPress={() => handleEditSingle(item)}
+                    style={styles.editIconButton}
+                >
+                    <MaterialCommunityIcons name="pencil-outline" size={18} color="#3a48c2" />
+                </TouchableOpacity>
             </View>
         </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.reportDetails}>
-            <View style={styles.detailRow}>
-                <View style={styles.detailItem}>
-                    <Text style={styles.detailLabel}>Unit Price</Text>
-                    <Text style={styles.detailValue}>₹{item.unit_price ? item.unit_price.toFixed(2) : '0.00'}</Text>
-                </View>
-                <View style={[styles.detailItem, { alignItems: 'center' }]}>
-                    <Text style={styles.detailLabel}>Quantity</Text>
-                    <Text style={styles.detailValue}>{item.qty}</Text>
-                </View>
-                <View style={[styles.detailItem, { alignItems: 'flex-end' }]}>
-                    <Text style={styles.detailLabel}>Created By</Text>
-                    <Text style={styles.userText}>{item.created_by || 'Unknown'}</Text>
-                </View>
-            </View>
-
-            {item.desc && (
-                <View style={styles.descContainer}>
-                    <Text style={styles.descLabel}>Notes:</Text>
-                    <Text style={styles.descText}>{item.desc}</Text>
-                </View>
-            )}
-        </View>
-
-        <View style={styles.reportFooter}>
-            <View style={styles.metaRow}>
-                <MaterialCommunityIcons name="clock-outline" size={14} color="#888" />
-                <Text style={styles.footerText}>{formatDateTime(item.created_at)}</Text>
-            </View>
-        </View>
-    </View>
-));
+    );
+});
 
 const ReportResultScreen = ({ navigation, route }) => {
     const { filters } = route.params || {};
@@ -72,12 +169,67 @@ const ReportResultScreen = ({ navigation, route }) => {
     const [summary, setSummary] = useState(null);
 
     const fetchReport = useCallback(async () => {
-        setIsLoading(true);
+        // Only show loading on initial load or empty data
+        if (reportData.length === 0) setIsLoading(true);
+
         try {
-            const response = await reportService.getSalesReport(filters);
+            const response = await reportService.getSalesReport({
+                ...filters,
+                limit: 100 // Get more records to allow grouping
+            });
 
             if (response && response.data) {
-                setReportData(response.data.report || []);
+                const { report, summary: apiSummary } = response.data;
+                const sales = report || [];
+
+                // Group transactions close in time (2 seconds window)
+                const groupTransactions = (transactions) => {
+                    if (!transactions || transactions.length === 0) return [];
+
+                    // Ensure sorted by time descending
+                    const sorted = [...transactions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+                    const grouped = [];
+                    if (sorted.length === 0) return [];
+
+                    let currentGroup = {
+                        ...sorted[0],
+                        total: parseFloat(sorted[0].total),
+                        items: [sorted[0]],
+                        isGroup: false,
+                        qty: parseInt(sorted[0].qty || 0)
+                    };
+
+                    for (let i = 1; i < sorted.length; i++) {
+                        const item = sorted[i];
+                        const lastItemInGroup = currentGroup.items[currentGroup.items.length - 1]; // Closest in time
+
+                        const timeDiff = Math.abs(new Date(lastItemInGroup.created_at) - new Date(item.created_at));
+
+                        // If within 2 seconds, assume same batch
+                        if (timeDiff < 2000) {
+                            currentGroup.items.push(item);
+                            currentGroup.total += parseFloat(item.total);
+                            currentGroup.qty += parseInt(item.qty || 0);
+                            currentGroup.isGroup = true;
+                        } else {
+                            // Push finished group
+                            grouped.push(currentGroup);
+                            // Start new group
+                            currentGroup = {
+                                ...item,
+                                total: parseFloat(item.total),
+                                items: [item],
+                                isGroup: false,
+                                qty: parseInt(item.qty || 0)
+                            };
+                        }
+                    }
+                    grouped.push(currentGroup);
+                    return grouped;
+                };
+
+                setReportData(groupTransactions(report));
                 setSummary(response.data.summary || null);
             }
         } catch (error) {
@@ -88,9 +240,12 @@ const ReportResultScreen = ({ navigation, route }) => {
         }
     }, [filters]);
 
-    useEffect(() => {
-        fetchReport();
-    }, [fetchReport]);
+    // Auto-refresh when screen comes into focus (after editing a sale)
+    useFocusEffect(
+        useCallback(() => {
+            fetchReport();
+        }, [fetchReport])
+    );
 
     const formatDateTime = (dateString) => {
         const date = new Date(dateString);
@@ -135,24 +290,28 @@ const ReportResultScreen = ({ navigation, route }) => {
     };
 
     const renderItem = useCallback(({ item }) => (
-        <ReportItem item={item} formatDateTime={formatDateTime} />
-    ), []);
+        <ReportItem item={item} formatDateTime={formatDateTime} navigation={navigation} />
+    ), [navigation]);
 
     return (
         <View style={styles.container}>
             {/* Header */}
             <LinearGradient
-                colors={['#3a48c2', '#2a38a0']}
-                style={styles.header}
+                colors={['#3a48c2', '#2a38a0', '#192f6a']}
+                style={styles.headerBackground}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
+                {/* Decorative Elements */}
+                <View style={styles.decorativeCircle1} />
+                <View style={styles.decorativeCircle2} />
+
                 <View style={styles.headerContent}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                        <MaterialCommunityIcons name="arrow-left" size={26} color="#fff" />
+                        <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Sales Report Result</Text>
-                    <View style={styles.backButton} />
+                    <View style={styles.addButtonPlaceholder} />
                 </View>
             </LinearGradient>
 
@@ -186,26 +345,63 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#F8F9FD',
     },
-    header: {
+    headerBackground: {
         paddingTop: Platform.OS === 'android' ? 20 : 20,
-        paddingBottom: 15,
+        paddingBottom: 26,
         paddingHorizontal: 20,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        marginBottom: 12,
+        position: 'relative',
+        overflow: 'hidden',
+        zIndex: 1,
+    },
+    decorativeCircle1: {
+        position: 'absolute',
+        width: 200,
+        height: 200,
+        borderRadius: 100,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: -50,
+        right: -50,
+    },
+    decorativeCircle2: {
+        position: 'absolute',
+        width: 150,
+        height: 150,
+        borderRadius: 75,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: 40,
+        left: -40,
     },
     headerContent: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginTop: 10,
     },
     backButton: {
-        padding: 5,
-        width: 40,
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        padding: 10,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        width: 44,
+        height: 44,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: 'bold',
         color: '#fff',
         flex: 1,
         textAlign: 'center',
+        letterSpacing: 0.5,
+    },
+    addButtonPlaceholder: {
+        width: 44,
+        height: 44,
     },
     loadingContainer: {
         flex: 1,
@@ -393,6 +589,54 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#bbb',
         marginTop: 5,
+    },
+    groupDetails: {
+        backgroundColor: '#F8F9FD',
+        borderRadius: 12,
+        padding: 10,
+        marginBottom: 10,
+    },
+    subItemRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+    },
+    subItemName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333',
+    },
+    subItemMeta: {
+        fontSize: 12,
+        color: '#888',
+        marginTop: 2,
+    },
+    subItemTotal: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#15803d',
+    },
+    subItemDesc: {
+        fontSize: 11,
+        color: '#666',
+        fontStyle: 'italic',
+        marginTop: 2,
+    },
+    editIconButton: {
+        padding: 6,
+        borderRadius: 8,
+        backgroundColor: 'rgba(58, 72, 194, 0.1)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    editAllText: {
+        fontSize: 12,
+        color: '#3a48c2',
+        fontWeight: '600',
     },
 });
 

@@ -12,7 +12,8 @@ import {
     RefreshControl,
     Modal,
     Image,
-    Dimensions
+    Dimensions,
+    FlatList
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
@@ -21,6 +22,8 @@ import { categoryService } from '../services/categoryService';
 import { productService } from '../services/productService';
 import { salesService } from '../services/salesService';
 import { getImageUrl, authService } from '../services';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Memoized Category Card for better performance
 const CategoryCard = memo(({ category, index, isSelected, onPress }) => {
@@ -97,11 +100,68 @@ const CategoryCard = memo(({ category, index, isSelected, onPress }) => {
     );
 });
 
+// Product Item in Modal
+const ProductItem = memo(({ product, onSelect }) => {
+    return (
+        <TouchableOpacity
+            style={styles.productItem}
+            onPress={() => onSelect(product)}
+        >
+            <View style={styles.productItemContent}>
+                <Text style={styles.productItemName} numberOfLines={2}>
+                    {product.product_name}
+                </Text>
+                <Text style={styles.productItemCode}>{product.product_code}</Text>
+            </View>
+            <View style={styles.productItemRight}>
+                <Text style={styles.productItemPrice}>₹{product.price}</Text>
+                <MaterialCommunityIcons name="plus-circle" size={24} color="#3a48c2" />
+            </View>
+        </TouchableOpacity>
+    );
+});
+
+// Cart Item Component
+const CartItem = memo(({ item, index, onUpdateQty, onRemove }) => {
+    return (
+        <View style={styles.cartItem}>
+            <View style={styles.cartItemInfo}>
+                <Text style={styles.cartItemCategory}>{item.category_name}</Text>
+                <Text style={styles.cartItemName} numberOfLines={1}>{item.product_name}</Text>
+                <Text style={styles.cartItemPrice}>₹{item.price} × {item.qty}</Text>
+            </View>
+            <View style={styles.cartItemActions}>
+                <View style={styles.qtyControlMini}>
+                    <TouchableOpacity
+                        style={styles.qtyBtnMini}
+                        onPress={() => onUpdateQty(index, Math.max(1, item.qty - 1))}
+                    >
+                        <MaterialCommunityIcons name="minus" size={16} color="#3a48c2" />
+                    </TouchableOpacity>
+                    <Text style={styles.qtyTextMini}>{item.qty}</Text>
+                    <TouchableOpacity
+                        style={styles.qtyBtnMini}
+                        onPress={() => onUpdateQty(index, item.qty + 1)}
+                    >
+                        <MaterialCommunityIcons name="plus" size={16} color="#3a48c2" />
+                    </TouchableOpacity>
+                </View>
+                <Text style={styles.cartItemTotal}>₹{(item.price * item.qty).toFixed(2)}</Text>
+                <TouchableOpacity
+                    style={styles.removeBtn}
+                    onPress={() => onRemove(index)}
+                >
+                    <MaterialCommunityIcons name="delete-outline" size={20} color="#dc2626" />
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+});
+
 const SalesScreen = ({ navigation }) => {
     const [categories, setCategories] = useState([]);
     const [products, setProducts] = useState([]);
     const [selectedCategory, setSelectedCategory] = useState(null);
-    const [selectedProduct, setSelectedProduct] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingProducts, setIsLoadingProducts] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -114,16 +174,26 @@ const SalesScreen = ({ navigation }) => {
         del: false
     });
 
-    // Sale form state
+    // Cart state - holds multiple products
+    const [cartItems, setCartItems] = useState([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Product selection modal
+    const [showProductModal, setShowProductModal] = useState(false);
+
+    // Quantity modal for adding to cart
+    const [showQtyModal, setShowQtyModal] = useState(false);
+    const [selectedProduct, setSelectedProduct] = useState(null);
     const [qty, setQty] = useState('1');
     const [desc, setDesc] = useState('');
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [showSaleModal, setShowSaleModal] = useState(false);
 
     const [showAllCategories, setShowAllCategories] = useState(false);
 
     // Categories to display based on expansion state
-    const displayedCategories = showAllCategories ? categories : categories.slice(0, 3);
+    const displayedCategories = showAllCategories ? categories : categories.slice(0, 6);
+
+    // Calculate total
+    const grandTotal = cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
 
     // Load permissions on mount
     useEffect(() => {
@@ -185,26 +255,26 @@ const SalesScreen = ({ navigation }) => {
     const onRefresh = useCallback(() => {
         setRefreshing(true);
         setSelectedCategory(null);
-        setSelectedProduct(null);
         setProducts([]);
         fetchCategories();
     }, [fetchCategories]);
 
-    const handleCategorySelect = useCallback((category) => {
+    const handleCategoryPress = useCallback((category) => {
         setSelectedCategory(category);
-        setSelectedProduct(null);
         fetchProductsByCategory(category.id);
+        setShowProductModal(true);
     }, []);
 
     const handleProductSelect = (product) => {
         setSelectedProduct(product);
         setQty('1');
         setDesc('');
-        setShowSaleModal(true);
+        setShowProductModal(false);
+        setShowQtyModal(true);
     };
 
-    const handleSubmitSale = async () => {
-        if (!selectedProduct) {
+    const handleAddToCart = () => {
+        if (!selectedProduct || !selectedCategory) {
             Alert.alert('Error', 'Please select a product');
             return;
         }
@@ -215,25 +285,111 @@ const SalesScreen = ({ navigation }) => {
             return;
         }
 
+        const newItem = {
+            category_id: selectedCategory.id,
+            category_name: selectedCategory.category_name,
+            product_id: selectedProduct.id,
+            product_name: selectedProduct.product_name,
+            product_code: selectedProduct.product_code,
+            price: selectedProduct.price,
+            qty: quantity,
+            desc: desc.trim() || null
+        };
+
+        // Check if product already exists in cart
+        const existingIndex = cartItems.findIndex(item => item.product_id === selectedProduct.id);
+        if (existingIndex >= 0) {
+            // Update quantity
+            const updatedItems = [...cartItems];
+            updatedItems[existingIndex].qty += quantity;
+            if (desc.trim()) {
+                updatedItems[existingIndex].desc = desc.trim();
+            }
+            setCartItems(updatedItems);
+        } else {
+            setCartItems([...cartItems, newItem]);
+        }
+
+        setShowQtyModal(false);
+        setSelectedProduct(null);
+        setSelectedCategory(null);
+        setQty('1');
+        setDesc('');
+    };
+
+    const handleUpdateCartQty = (index, newQty) => {
+        const updatedItems = [...cartItems];
+        updatedItems[index].qty = newQty;
+        setCartItems(updatedItems);
+    };
+
+    const handleRemoveFromCart = (index) => {
+        Alert.alert(
+            'Remove Item',
+            'Are you sure you want to remove this item from cart?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Remove',
+                    style: 'destructive',
+                    onPress: () => {
+                        const updatedItems = cartItems.filter((_, i) => i !== index);
+                        setCartItems(updatedItems);
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleClearCart = () => {
+        Alert.alert(
+            'Clear Cart',
+            'Are you sure you want to remove all items from cart?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Clear All',
+                    style: 'destructive',
+                    onPress: () => setCartItems([])
+                }
+            ]
+        );
+    };
+
+    const handleSubmitSales = async () => {
+        if (cartItems.length === 0) {
+            Alert.alert('Error', 'Please add at least one product to cart');
+            return;
+        }
+
         setIsSubmitting(true);
         try {
-            const saleData = {
-                product_id: selectedProduct.id,
-                qty: quantity,
-                desc: desc.trim() || null
-            };
+            // Submit each item as a separate sale
+            const promises = cartItems.map(item => {
+                const saleData = {
+                    product_id: item.product_id,
+                    qty: item.qty,
+                    desc: item.desc || null
+                };
+                return salesService.createSale(saleData);
+            });
 
-            await salesService.createSale(saleData);
+            await Promise.all(promises);
 
-            Alert.alert('Success', `Sale recorded successfully!\n\n${selectedProduct.product_name}\nQty: ${quantity}\nUnit Price: ₹${selectedProduct.price}\nTotal: ₹${(selectedProduct.price * quantity).toFixed(2)}`);
+            // Build success message
+            const itemsSummary = cartItems.map(item =>
+                `${item.product_name} (${item.qty} × ₹${item.price} = ₹${(item.qty * item.price).toFixed(2)})`
+            ).join('\n');
 
-            setShowSaleModal(false);
-            setSelectedProduct(null);
-            setQty('1');
-            setDesc('');
+            Alert.alert(
+                'Success',
+                `Sales recorded successfully!\n\n${itemsSummary}\n\nGrand Total: ₹${grandTotal.toFixed(2)}`
+            );
+
+            setCartItems([]);
         } catch (error) {
-            console.error('Submit sale error:', error);
-            const msg = error.response?.data?.message || 'Failed to create sale';
+            console.error('Submit sales error:', error);
+            const msg = error.response?.data?.message || 'Failed to create sales';
             Alert.alert('Error', msg);
         } finally {
             setIsSubmitting(false);
@@ -252,22 +408,27 @@ const SalesScreen = ({ navigation }) => {
         <View style={styles.container}>
             {/* Header */}
             <LinearGradient
-                colors={['#3a48c2', '#2a38a0']}
-                style={styles.header}
+                colors={['#3a48c2', '#2a38a0', '#192f6a']}
+                style={styles.headerBackground}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
+                {/* Decorative Elements */}
+                <View style={styles.decorativeCircle1} />
+                <View style={styles.decorativeCircle2} />
+
                 <View style={styles.headerContent}>
                     <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
-                        <MaterialCommunityIcons name="menu" size={26} color="#fff" />
+                        <MaterialCommunityIcons name="menu" size={24} color="#fff" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>New Sale</Text>
-                    <View style={styles.menuButton} />
+                    <View style={styles.addButtonPlaceholder} />
                 </View>
             </LinearGradient>
 
             <ScrollView
                 style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
                 refreshControl={
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3a48c2" />
                 }
@@ -286,26 +447,27 @@ const SalesScreen = ({ navigation }) => {
                         {/* Categories Grid */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Select Category</Text>
+                            <Text style={styles.sectionSubtitle}>Tap a category to view and select products</Text>
                             <View style={styles.categoryGrid}>
                                 {displayedCategories.map((category, index) => (
                                     <CategoryCard
                                         key={category.id}
                                         category={category}
                                         index={index}
-                                        isSelected={selectedCategory?.id === category.id}
-                                        onPress={() => handleCategorySelect(category)}
+                                        isSelected={false}
+                                        onPress={() => handleCategoryPress(category)}
                                     />
                                 ))}
                             </View>
 
                             {/* Show More / Show Less Button */}
-                            {categories.length > 3 && (
+                            {categories.length > 6 && (
                                 <TouchableOpacity
                                     style={styles.showMoreButton}
                                     onPress={() => setShowAllCategories(!showAllCategories)}
                                 >
                                     <Text style={styles.showMoreText}>
-                                        {showAllCategories ? 'Show Less' : 'Show More'}
+                                        {showAllCategories ? 'Show Less' : `Show All (${categories.length})`}
                                     </Text>
                                     <MaterialCommunityIcons
                                         name={showAllCategories ? 'chevron-up' : 'chevron-down'}
@@ -323,64 +485,153 @@ const SalesScreen = ({ navigation }) => {
                             )}
                         </View>
 
-                        {/* Products Grid */}
-                        {selectedCategory && (
-                            <View style={styles.section}>
-                                <View style={styles.sectionHeader}>
-                                    <Text style={styles.sectionTitle}>Products in {selectedCategory.category_name}</Text>
-                                    <TouchableOpacity onPress={() => {
-                                        setSelectedCategory(null);
-                                        setProducts([]);
-                                    }}>
-                                        <Text style={styles.clearText}>Clear</Text>
+                        {/* Cart Section */}
+                        {cartItems.length > 0 && (
+                            <View style={styles.cartSection}>
+                                <View style={styles.cartHeader}>
+                                    <View style={styles.cartTitleRow}>
+                                        <MaterialCommunityIcons name="cart" size={22} color="#1a1a1a" />
+                                        <Text style={styles.cartTitle}>Cart ({cartItems.length} items)</Text>
+                                    </View>
+                                    <TouchableOpacity onPress={handleClearCart}>
+                                        <Text style={styles.clearAllText}>Clear All</Text>
                                     </TouchableOpacity>
                                 </View>
 
-                                {isLoadingProducts ? (
-                                    <View style={styles.loadingProducts}>
-                                        <ActivityIndicator size="small" color="#3a48c2" />
-                                        <Text style={styles.loadingText}>Loading products...</Text>
-                                    </View>
-                                ) : products.length > 0 ? (
-                                    <View style={styles.productGrid}>
-                                        {products.map((product) => (
-                                            <TouchableOpacity
-                                                key={product.id}
-                                                style={styles.productCard}
-                                                onPress={() => handleProductSelect(product)}
-                                            >
-                                                <Text style={styles.productName} numberOfLines={2}>
-                                                    {product.product_name}
-                                                </Text>
-                                                <Text style={styles.productCode}>{product.product_code}</Text>
-                                                <Text style={styles.productPrice}>₹{product.price}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                ) : (
-                                    <View style={styles.emptyState}>
-                                        <MaterialCommunityIcons name="package-variant-closed" size={50} color="#ddd" />
-                                        <Text style={styles.emptyText}>No products in this category</Text>
-                                    </View>
-                                )}
+                                {cartItems.map((item, index) => (
+                                    <CartItem
+                                        key={`${item.product_id}-${index}`}
+                                        item={item}
+                                        index={index}
+                                        onUpdateQty={handleUpdateCartQty}
+                                        onRemove={handleRemoveFromCart}
+                                    />
+                                ))}
+
+                                {/* Grand Total */}
+                                <View style={styles.grandTotalContainer}>
+                                    <Text style={styles.grandTotalLabel}>Grand Total</Text>
+                                    <Text style={styles.grandTotalValue}>₹{grandTotal.toFixed(2)}</Text>
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Empty Cart State */}
+                        {cartItems.length === 0 && (
+                            <View style={styles.emptyCartState}>
+                                <MaterialCommunityIcons name="cart-outline" size={60} color="#ddd" />
+                                <Text style={styles.emptyCartTitle}>Your cart is empty</Text>
+                                <Text style={styles.emptyCartText}>Tap on a category above to add products</Text>
                             </View>
                         )}
                     </>
                 )}
             </ScrollView>
 
-            {/* Sale Modal */}
+            {/* Bottom Submit Button */}
+            {permissions.add && cartItems.length > 0 && (
+                <View style={styles.bottomBar}>
+                    <View style={styles.bottomBarContent}>
+                        <View style={styles.bottomBarInfo}>
+                            <Text style={styles.bottomBarItems}>{cartItems.length} item(s)</Text>
+                            <Text style={styles.bottomBarTotal}>₹{grandTotal.toFixed(2)}</Text>
+                        </View>
+                        <TouchableOpacity
+                            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+                            onPress={handleSubmitSales}
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? (
+                                <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                                <>
+                                    <MaterialCommunityIcons name="check-circle" size={22} color="#fff" />
+                                    <Text style={styles.submitButtonText}>Submit </Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            )}
+
+            {/* Products Modal */}
             <Modal
-                visible={showSaleModal}
+                visible={showProductModal}
                 animationType="slide"
                 transparent={true}
-                onRequestClose={() => setShowSaleModal(false)}
+                onRequestClose={() => {
+                    setShowProductModal(false);
+                    setSelectedCategory(null);
+                    setProducts([]);
+                }}
             >
                 <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
+                    <View style={styles.productModalContent}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Enter Sale Details</Text>
-                            <TouchableOpacity onPress={() => setShowSaleModal(false)}>
+                            <View>
+                                <Text style={styles.modalTitle}>Select Product</Text>
+                                {selectedCategory && (
+                                    <Text style={styles.modalSubtitle}>{selectedCategory.category_name}</Text>
+                                )}
+                            </View>
+                            <TouchableOpacity
+                                style={styles.modalCloseBtn}
+                                onPress={() => {
+                                    setShowProductModal(false);
+                                    setSelectedCategory(null);
+                                    setProducts([]);
+                                }}
+                            >
+                                <MaterialCommunityIcons name="close" size={24} color="#666" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {isLoadingProducts ? (
+                            <View style={styles.loadingProducts}>
+                                <ActivityIndicator size="large" color="#3a48c2" />
+                                <Text style={styles.loadingText}>Loading products...</Text>
+                            </View>
+                        ) : products.length > 0 ? (
+                            <FlatList
+                                data={products}
+                                keyExtractor={(item) => item.id.toString()}
+                                renderItem={({ item }) => (
+                                    <ProductItem product={item} onSelect={handleProductSelect} />
+                                )}
+                                showsVerticalScrollIndicator={false}
+                                contentContainerStyle={styles.productList}
+                            />
+                        ) : (
+                            <View style={styles.emptyState}>
+                                <MaterialCommunityIcons name="package-variant-closed" size={60} color="#ddd" />
+                                <Text style={styles.emptyText}>No products in this category</Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Quantity Modal */}
+            <Modal
+                visible={showQtyModal}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => {
+                    setShowQtyModal(false);
+                    setSelectedProduct(null);
+                }}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.qtyModalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Add Products</Text>
+                            <TouchableOpacity
+                                style={styles.modalCloseBtn}
+                                onPress={() => {
+                                    setShowQtyModal(false);
+                                    setSelectedProduct(null);
+                                }}
+                            >
                                 <MaterialCommunityIcons name="close" size={24} color="#666" />
                             </TouchableOpacity>
                         </View>
@@ -431,10 +682,10 @@ const SalesScreen = ({ navigation }) => {
 
                                 {/* Description */}
                                 <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Description (Optional)</Text>
+                                    <Text style={styles.label}>Description *</Text>
                                     <TextInput
                                         style={[styles.input, styles.textArea]}
-                                        placeholder="Add notes about this sale..."
+                                        placeholder="Add notes about this item..."
                                         value={desc}
                                         onChangeText={setDesc}
                                         placeholderTextColor="#999"
@@ -445,26 +696,30 @@ const SalesScreen = ({ navigation }) => {
 
                                 {/* Total Preview */}
                                 <View style={styles.totalContainer}>
-                                    <Text style={styles.totalLabel}>Total Amount</Text>
+                                    <Text style={styles.totalLabel}>Item Total</Text>
                                     <Text style={styles.totalValue}>
                                         ₹{(selectedProduct.price * (parseInt(qty) || 0)).toFixed(2)}
                                     </Text>
                                 </View>
 
-                                {/* Submit Button */}
+                                {/* Add to Cart Button */}
                                 <TouchableOpacity
-                                    style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-                                    onPress={handleSubmitSale}
-                                    disabled={isSubmitting}
+                                    style={styles.addToCartButton}
+                                    onPress={handleAddToCart}
                                 >
-                                    {isSubmitting ? (
-                                        <ActivityIndicator color="#fff" />
-                                    ) : (
-                                        <>
-                                            <MaterialCommunityIcons name="check-circle" size={22} color="#fff" />
-                                            <Text style={styles.submitButtonText}>Confirm Sale</Text>
-                                        </>
-                                    )}
+                                    <MaterialCommunityIcons name="cart-plus" size={22} color="#fff" />
+                                    <Text style={styles.addToCartButtonText}>Add</Text>
+                                </TouchableOpacity>
+
+                                {/* Continue Shopping Button */}
+                                <TouchableOpacity
+                                    style={styles.continueShoppingBtn}
+                                    onPress={() => {
+                                        handleAddToCart();
+                                        // Re-open product modal for same category if we have one
+                                    }}
+                                >
+                                    <Text style={styles.continueShoppingText}>Add & Continue Shopping</Text>
                                 </TouchableOpacity>
                             </>
                         )}
@@ -506,46 +761,97 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 24,
     },
-    header: {
+    headerBackground: {
         paddingTop: Platform.OS === 'android' ? 20 : 20,
-        paddingBottom: 15,
+        paddingBottom: 26,
         paddingHorizontal: 20,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        marginBottom: 12,
+        position: 'relative',
+        overflow: 'hidden',
+        zIndex: 1,
+    },
+    decorativeCircle1: {
+        position: 'absolute',
+        width: 200,
+        height: 200,
+        borderRadius: 100,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: -50,
+        right: -50,
+    },
+    decorativeCircle2: {
+        position: 'absolute',
+        width: 150,
+        height: 150,
+        borderRadius: 75,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: 40,
+        left: -40,
     },
     headerContent: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginTop: 10,
     },
     menuButton: {
-        padding: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        padding: 10,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     headerTitle: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: 'bold',
         color: '#fff',
+        letterSpacing: 0.5,
+    },
+    addButtonPlaceholder: {
+        width: 44,
+        height: 44,
+    },
+    cartBadgeContainer: {
+        position: 'relative',
+        padding: 10,
+    },
+    cartBadge: {
+        position: 'absolute',
+        top: 2,
+        right: 2,
+        backgroundColor: '#dc2626',
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    cartBadgeText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
     },
     scrollView: {
         flex: 1,
     },
+    scrollContent: {
+        paddingBottom: 100,
+    },
     section: {
         padding: 20,
-    },
-    sectionHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 15,
     },
     sectionTitle: {
         fontSize: 18,
         fontWeight: 'bold',
         color: '#1a1a1a',
-        marginBottom: 15,
+        marginBottom: 4,
     },
-    clearText: {
-        fontSize: 14,
-        color: '#3a48c2',
-        fontWeight: '600',
+    sectionSubtitle: {
+        fontSize: 13,
+        color: '#888',
+        marginBottom: 15,
     },
     categoryGrid: {
         flexDirection: 'row',
@@ -554,7 +860,7 @@ const styles = StyleSheet.create({
         gap: 10,
     },
     categoryCard: {
-        width: (Dimensions.get('window').width - 40 - 20) / 3, // (screenWidth - padding - gaps) / 3 columns
+        width: (SCREEN_WIDTH - 40 - 20) / 3,
         backgroundColor: '#fff',
         borderRadius: 16,
         padding: 12,
@@ -635,48 +941,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#3a48c2',
     },
-    productGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 12,
-    },
-    productCard: {
-        width: '47%',
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 15,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-    },
-    productName: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#1a1a1a',
-        marginBottom: 4,
-    },
-    productCode: {
-        fontSize: 11,
-        color: '#888',
-        marginBottom: 8,
-    },
-    productPrice: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#15803d',
-    },
-    loadingProducts: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 30,
-        gap: 10,
-    },
-    loadingText: {
-        color: '#666',
-    },
     emptyState: {
         alignItems: 'center',
         paddingVertical: 40,
@@ -686,29 +950,282 @@ const styles = StyleSheet.create({
         color: '#999',
         marginTop: 10,
     },
-    // Modal Styles
+    // Cart Section
+    cartSection: {
+        margin: 20,
+        marginTop: 0,
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+    },
+    cartHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    cartTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    cartTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#1a1a1a',
+    },
+    clearAllText: {
+        fontSize: 14,
+        color: '#dc2626',
+        fontWeight: '600',
+    },
+    cartItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f5f5f5',
+    },
+    cartItemInfo: {
+        flex: 1,
+        marginRight: 10,
+    },
+    cartItemCategory: {
+        fontSize: 11,
+        color: '#3a48c2',
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        marginBottom: 2,
+    },
+    cartItemName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1a1a1a',
+        marginBottom: 2,
+    },
+    cartItemPrice: {
+        fontSize: 12,
+        color: '#888',
+    },
+    cartItemActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    qtyControlMini: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#EEF0FF',
+        borderRadius: 8,
+        padding: 4,
+    },
+    qtyBtnMini: {
+        width: 28,
+        height: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    qtyTextMini: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#1a1a1a',
+        paddingHorizontal: 8,
+    },
+    cartItemTotal: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#15803d',
+        minWidth: 60,
+        textAlign: 'right',
+    },
+    removeBtn: {
+        padding: 4,
+    },
+    grandTotalContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 16,
+        paddingTop: 16,
+        borderTopWidth: 2,
+        borderTopColor: '#f0f0f0',
+    },
+    grandTotalLabel: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#1a1a1a',
+    },
+    grandTotalValue: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#15803d',
+    },
+    // Empty Cart State
+    emptyCartState: {
+        alignItems: 'center',
+        paddingVertical: 60,
+        marginHorizontal: 20,
+    },
+    emptyCartTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#666',
+        marginTop: 16,
+    },
+    emptyCartText: {
+        fontSize: 14,
+        color: '#999',
+        marginTop: 8,
+        textAlign: 'center',
+    },
+    // Bottom Bar
+    bottomBar: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: '#fff',
+        borderTopWidth: 1,
+        borderTopColor: '#f0f0f0',
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+    },
+    bottomBarContent: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    bottomBarInfo: {
+        flex: 1,
+    },
+    bottomBarItems: {
+        fontSize: 13,
+        color: '#888',
+    },
+    bottomBarTotal: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1a1a1a',
+    },
+    submitButton: {
+        backgroundColor: '#1540ccff',
+        borderRadius: 12,
+        paddingVertical: 14,
+        paddingHorizontal: 24,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    submitButtonDisabled: {
+        opacity: 0.6,
+    },
+    submitButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    // Product Modal
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'flex-end',
     },
-    modalContent: {
+    productModalContent: {
         backgroundColor: '#fff',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         padding: 20,
-        maxHeight: '80%',
+        maxHeight: '75%',
+        minHeight: '50%',
     },
     modalHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 20,
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
+    modalCloseBtn: {
+        padding: 4,
     },
     modalTitle: {
         fontSize: 20,
         fontWeight: 'bold',
         color: '#1a1a1a',
+    },
+    modalSubtitle: {
+        fontSize: 14,
+        color: '#3a48c2',
+        marginTop: 4,
+        fontWeight: '600',
+    },
+    productList: {
+        paddingBottom: 20,
+    },
+    productItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#F8F9FD',
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 10,
+    },
+    productItemContent: {
+        flex: 1,
+        marginRight: 12,
+    },
+    productItemName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1a1a1a',
+        marginBottom: 4,
+    },
+    productItemCode: {
+        fontSize: 12,
+        color: '#888',
+    },
+    productItemRight: {
+        alignItems: 'flex-end',
+        gap: 4,
+    },
+    productItemPrice: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#15803d',
+    },
+    loadingProducts: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 40,
+        gap: 12,
+    },
+    loadingText: {
+        color: '#666',
+        fontSize: 14,
+    },
+    // Quantity Modal
+    qtyModalContent: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 20,
+        maxHeight: '80%',
     },
     productInfo: {
         backgroundColor: '#F8F9FD',
@@ -806,7 +1323,7 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#15803d',
     },
-    submitButton: {
+    addToCartButton: {
         backgroundColor: '#3a48c2',
         borderRadius: 12,
         padding: 16,
@@ -814,14 +1331,25 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         gap: 8,
+        marginBottom: 12,
     },
-    submitButtonDisabled: {
-        opacity: 0.6,
-    },
-    submitButtonText: {
+    addToCartButtonText: {
         color: '#fff',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    continueShoppingBtn: {
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderColor: '#3a48c2',
+        borderRadius: 12,
+        padding: 14,
+        alignItems: 'center',
+    },
+    continueShoppingText: {
+        color: '#3a48c2',
+        fontSize: 14,
+        fontWeight: '600',
     },
 });
 

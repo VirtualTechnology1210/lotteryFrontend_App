@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import {
     View,
     Text,
@@ -14,9 +14,42 @@ import {
     ActivityIndicator,
     Alert
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { authService } from '../services';
 import { permissionService } from '../services/permissionService';
+
+// Memoized input component for better performance
+const InputField = memo(({ icon, value, onChangeText, placeholder, secureTextEntry, keyboardType, autoCapitalize, disabled, rightIcon }) => (
+    <View style={styles.inputContainer}>
+        <MaterialCommunityIcons name={icon} size={24} color="#666" style={styles.inputIcon} />
+        <TextInput
+            style={styles.input}
+            placeholder={placeholder}
+            placeholderTextColor="#999"
+            value={value}
+            onChangeText={onChangeText}
+            keyboardType={keyboardType}
+            autoCapitalize={autoCapitalize}
+            secureTextEntry={secureTextEntry}
+            editable={!disabled}
+            autoCorrect={false}
+            spellCheck={false}
+        />
+        {rightIcon}
+    </View>
+));
+
+// Default admin permissions for instant access
+const DEFAULT_ADMIN_PERMISSIONS = {
+    dashboard: { view: true, add: true, edit: true, del: true },
+    categories: { view: true, add: true, edit: true, del: true },
+    products: { view: true, add: true, edit: true, del: true },
+    sales: { view: true, add: true, edit: true, del: true },
+    reports: { view: true, add: true, edit: true, del: true },
+    users: { view: true, add: true, edit: true, del: true },
+    'roles & permissions': { view: true, add: true, edit: true, del: true }
+};
 
 const LoginScreen = ({ navigation }) => {
     const [email, setEmail] = useState('');
@@ -24,81 +57,113 @@ const LoginScreen = ({ navigation }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
-    const validateInput = () => {
-        if (!email || !password) {
+    // Memoized email validation regex
+    const emailRegex = useMemo(() => /\S+@\S+\.\S+/, []);
+
+    // Fast synchronous validation - no async operations
+    const validateInput = useCallback(() => {
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail || !password) {
             Alert.alert('Error', 'Please fill in all fields');
             return false;
         }
-        const emailRegex = /\S+@\S+\.\S+/;
-        if (!emailRegex.test(email)) {
+        if (!emailRegex.test(trimmedEmail)) {
             Alert.alert('Error', 'Please enter a valid email address');
             return false;
         }
         return true;
-    };
+    }, [email, password, emailRegex]);
 
-    const handleLogin = async () => {
+    // Optimized login handler - fetches permissions BEFORE navigation
+    const handleLogin = useCallback(async () => {
         if (!validateInput()) return;
 
+        // Dismiss keyboard immediately for faster UI response
+        Keyboard.dismiss();
         setIsLoading(true);
+
+        const trimmedEmail = email.trim();
+
         try {
             const response = await authService.login({
-                email: email.trim(),
+                email: trimmedEmail,
                 password: password
             });
 
             if (response.success) {
                 const { token, user } = response.data;
-                await authService.saveAuthData(token, user);
+                const isAdmin = user.role === 'admin' || user.role_id === 1;
 
-                // Fetch and save user permissions
-                try {
-                    const permResponse = await permissionService.getMyPermissions();
-                    if (permResponse && permResponse.data) {
-                        // Backend returns permissions as a map: { 'Categories': { view: true, ... } }
-                        const permsFromApi = permResponse.data.permissions || {};
-                        // Convert keys to lowercase for consistent matching
-                        const permMap = {};
-                        Object.keys(permsFromApi).forEach(key => {
-                            permMap[key.toLowerCase()] = permsFromApi[key];
-                        });
-                        await authService.savePermissions(permMap);
-                    }
-                } catch (permError) {
-                    console.warn('Could not fetch permissions:', permError);
-                    // If admin, grant all permissions by default
-                    if (user.role === 'admin' || user.role_id === 1) {
-                        await authService.savePermissions({
-                            dashboard: { view: true, add: true, edit: true, del: true },
-                            categories: { view: true, add: true, edit: true, del: true },
-                            products: { view: true, add: true, edit: true, del: true },
-                            sales: { view: true, add: true, edit: true, del: true },
-                            reports: { view: true, add: true, edit: true, del: true },
-                            users: { view: true, add: true, edit: true, del: true },
-                            'roles & permissions': { view: true, add: true, edit: true, del: true }
-                        });
+                // Save token and user first
+                await AsyncStorage.multiSet([
+                    ['userToken', token],
+                    ['userProfile', JSON.stringify(user)]
+                ]);
+
+                // For admin: set default admin permissions immediately
+                // For non-admin: MUST fetch permissions BEFORE navigation
+                if (isAdmin) {
+                    await AsyncStorage.setItem('userPermissions', JSON.stringify(DEFAULT_ADMIN_PERMISSIONS));
+                } else {
+                    // Critical: Fetch and save permissions BEFORE navigating
+                    // This prevents the race condition where drawer renders with empty permissions
+                    try {
+                        const permResponse = await permissionService.getMyPermissions();
+                        if (permResponse?.data?.permissions) {
+                            const permsFromApi = permResponse.data.permissions;
+                            const permMap = {};
+                            Object.keys(permsFromApi).forEach(key => {
+                                // Normalize to lowercase for consistent matching
+                                permMap[key.toLowerCase()] = permsFromApi[key];
+                            });
+                            await AsyncStorage.setItem('userPermissions', JSON.stringify(permMap));
+                        } else {
+                            // No permissions returned - save empty object
+                            await AsyncStorage.setItem('userPermissions', JSON.stringify({}));
+                        }
+                    } catch (permError) {
+                        console.warn('Could not fetch permissions:', permError);
+                        // Save empty permissions to avoid undefined issues
+                        await AsyncStorage.setItem('userPermissions', JSON.stringify({}));
                     }
                 }
 
                 // Reset form
                 setEmail('');
                 setPassword('');
+                setIsLoading(false);
 
-                // Navigate to Home
+                // Navigate AFTER permissions are saved
                 navigation.replace('Home');
             } else {
+                setIsLoading(false);
                 Alert.alert('Login Failed', response.message || 'Invalid credentials');
             }
         } catch (error) {
             console.error('Login Error:', error);
+            setIsLoading(false);
             Alert.alert(
                 'Error',
                 error.message || 'Unable to connect to server. Please check your connection.'
             );
-        } finally {
-            setIsLoading(false);
         }
-    };
+    }, [email, password, navigation, validateInput]);
+
+    // Memoized toggle handler
+    const toggleShowPassword = useCallback(() => {
+        setShowPassword(prev => !prev);
+    }, []);
+
+    // Memoized password icon
+    const passwordIcon = useMemo(() => (
+        <TouchableOpacity onPress={toggleShowPassword} style={styles.eyeIcon} activeOpacity={0.7}>
+            <MaterialCommunityIcons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={24}
+                color="#666"
+            />
+        </TouchableOpacity>
+    ), [showPassword, toggleShowPassword]);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -117,41 +182,33 @@ const LoginScreen = ({ navigation }) => {
                     </View>
 
                     <View style={styles.formContainer}>
-                        <View style={styles.inputContainer}>
-                            <MaterialCommunityIcons name="email-outline" size={24} color="#666" style={styles.inputIcon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Email Address"
-                                placeholderTextColor="#999"
-                                value={email}
-                                onChangeText={setEmail}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                disabled={isLoading}
-                            />
-                        </View>
+                        {/* Email Input - Memoized for performance */}
+                        <InputField
+                            icon="email-outline"
+                            value={email}
+                            onChangeText={setEmail}
+                            placeholder="Email Address"
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            disabled={isLoading}
+                        />
 
-                        <View style={styles.inputContainer}>
-                            <MaterialCommunityIcons name="lock-outline" size={24} color="#666" style={styles.inputIcon} />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Password"
-                                placeholderTextColor="#999"
-                                value={password}
-                                onChangeText={setPassword}
-                                secureTextEntry={!showPassword}
-                                disabled={isLoading}
-                            />
-                            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                                <MaterialCommunityIcons
-                                    name={showPassword ? "eye-off-outline" : "eye-outline"}
-                                    size={24}
-                                    color="#666"
-                                />
-                            </TouchableOpacity>
-                        </View>
+                        {/* Password Input with toggle */}
+                        <InputField
+                            icon="lock-outline"
+                            value={password}
+                            onChangeText={setPassword}
+                            placeholder="Password"
+                            secureTextEntry={!showPassword}
+                            disabled={isLoading}
+                            rightIcon={passwordIcon}
+                        />
 
-                        <TouchableOpacity style={styles.forgotPassword} disabled={isLoading}>
+                        <TouchableOpacity
+                            style={styles.forgotPassword}
+                            disabled={isLoading}
+                            activeOpacity={0.7}
+                        >
                             <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
                         </TouchableOpacity>
 
@@ -159,9 +216,11 @@ const LoginScreen = ({ navigation }) => {
                             style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
                             onPress={handleLogin}
                             disabled={isLoading}
+                            activeOpacity={0.8}
+                            delayPressIn={0}
                         >
                             {isLoading ? (
-                                <ActivityIndicator color="#FFFFFF" />
+                                <ActivityIndicator color="#FFFFFF" size="small" />
                             ) : (
                                 <Text style={styles.loginButtonText}>Login</Text>
                             )}
@@ -169,7 +228,7 @@ const LoginScreen = ({ navigation }) => {
 
                         <View style={styles.signUpContainer}>
                             <Text style={styles.signUpText}>Don't have an account? </Text>
-                            <TouchableOpacity disabled={isLoading}>
+                            <TouchableOpacity disabled={isLoading} activeOpacity={0.7}>
                                 <Text style={styles.signUpLink}>Sign Up</Text>
                             </TouchableOpacity>
                         </View>

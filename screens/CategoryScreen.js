@@ -295,14 +295,18 @@ const CategoryScreen = ({ navigation }) => {
         <View style={styles.container}>
             {/* Header */}
             <LinearGradient
-                colors={['#3a48c2', '#2a38a0']}
-                style={styles.header}
+                colors={['#3a48c2', '#2a38a0', '#192f6a']}
+                style={styles.headerBackground}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
+                {/* Decorative Elements */}
+                <View style={styles.decorativeCircle1} />
+                <View style={styles.decorativeCircle2} />
+
                 <View style={styles.headerContent}>
                     <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
-                        <MaterialCommunityIcons name="menu" size={26} color="#fff" />
+                        <MaterialCommunityIcons name="menu" size={24} color="#fff" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Categories</Text>
                     {permissions.add ? (
@@ -326,12 +330,12 @@ const CategoryScreen = ({ navigation }) => {
                         >
                             <MaterialCommunityIcons
                                 name={showAddModal ? "close" : "plus"}
-                                size={26}
+                                size={28}
                                 color="#fff"
                             />
                         </TouchableOpacity>
                     ) : (
-                        <View style={styles.addButton} />
+                        <View style={styles.addButtonPlaceholder} />
                     )}
                 </View>
             </LinearGradient>
@@ -481,36 +485,77 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         backgroundColor: '#F8F9FD',
     },
-    header: {
+    headerBackground: {
         paddingTop: Platform.OS === 'android' ? 20 : 20,
-        paddingBottom: 10,
+        paddingBottom: 26,
         paddingHorizontal: 20,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        marginBottom: 12,
+        position: 'relative',
+        overflow: 'hidden',
+        zIndex: 1,
+    },
+    decorativeCircle1: {
+        position: 'absolute',
+        width: 200,
+        height: 200,
+        borderRadius: 100,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: -50,
+        right: -50,
+    },
+    decorativeCircle2: {
+        position: 'absolute',
+        width: 150,
+        height: 150,
+        borderRadius: 75,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        top: 40,
+        left: -40,
     },
     headerContent: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginTop: 10,
     },
     menuButton: {
-        padding: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        padding: 10,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     headerTitle: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: 'bold',
         color: '#fff',
+        letterSpacing: 0.5,
     },
     addButton: {
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
         padding: 8,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    addButtonPlaceholder: {
+        width: 44,
+        height: 44,
     },
     scrollView: {
         flex: 1,
+        marginTop: -20, // Negative margin to pull up content slightly if needed, or keeping it clean
     },
     addFormContainer: {
         backgroundColor: '#fff',
-        margin: 20,
+        marginHorizontal: 20,
+        marginTop: 20, // Push down from overlap
+        marginBottom: 20,
         padding: 20,
-        borderRadius: 20,
-        elevation: 4,
+        borderRadius: 24,
+        elevation: 8,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
@@ -681,7 +726,6 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderRadius: 16,
         marginBottom: 15,
-        overflow: 'hidden',
         elevation: 3,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -689,24 +733,29 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
         flexDirection: 'row',
         alignItems: 'center',
+        padding: 12, // Added padding for better layout with circular image
     },
     categoryImageContainer: {
-        width: 80,
-        height: 80,
+        width: 60, // Slightly reduced size for better fit
+        height: 60,
         backgroundColor: '#F0F0F0',
+        borderRadius: 30, // Half of 60 for circle
+        overflow: 'hidden',
     },
     categoryImage: {
-        width: 80,
-        height: 80,
+        width: 60,
+        height: 60,
         resizeMode: 'cover',
+        borderRadius: 30,
     },
     categoryImagePlaceholder: {
         position: 'absolute',
-        width: 80,
-        height: 80,
+        width: 60,
+        height: 60,
         backgroundColor: '#F0F0F0',
         justifyContent: 'center',
         alignItems: 'center',
+        borderRadius: 30,
     },
     imageHidden: {
         opacity: 0,

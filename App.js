@@ -7,6 +7,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { View, Text, ActivityIndicator } from 'react-native';
 
 // Screens
+import SplashScreen from './screens/SplashScreen';
 import LoginScreen from './screens/LoginScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import CategoryScreen from './screens/CategoryScreen';
@@ -16,6 +17,7 @@ import UserScreen from './screens/UserScreen';
 import RolesPermissionsScreen from './screens/RolesPermissionsScreen';
 import ReportsScreen from './screens/ReportsScreen';
 import ReportResultScreen from './screens/ReportResultScreen';
+import SalesEditScreen from './screens/SalesEditScreen';
 import CustomDrawer from './components/CustomDrawer';
 import { authService } from './services';
 
@@ -33,26 +35,35 @@ const SCREEN_CONFIG = [
   { name: 'Roles & Permissions', component: RolesPermissionsScreen, icon: 'shield-account-outline', permKey: 'roles & permissions', adminOnly: true },
 ];
 
-const DrawerNavigator = () => {
-  const [permissions, setPermissions] = useState({});
+const DrawerNavigator = ({ route }) => {
+  const prefetchedPerms = route.params?.permissions;
+  const [permissions, setPermissions] = useState(prefetchedPerms || {});
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!prefetchedPerms);
 
   useEffect(() => {
+    // Permissions are already loaded during login/splash, just retrieve them from storage
     const loadPermissions = async () => {
       try {
-        const perms = await authService.getPermissions();
+        // If we already have prefetched perms, we don't need to block UI
+        const perms = prefetchedPerms || await authService.getPermissions();
         const adminStatus = await authService.isAdmin();
-        setPermissions(perms);
+
+        // Debug logging for permission issues
+        console.log('DrawerNavigator - Loaded permissions:', JSON.stringify(perms));
+        console.log('DrawerNavigator - Is Admin:', adminStatus);
+
+        setPermissions(perms || {});
         setIsAdmin(adminStatus);
       } catch (error) {
         console.error('Error loading permissions:', error);
+        setPermissions({});
       } finally {
         setIsLoading(false);
       }
     };
     loadPermissions();
-  }, []);
+  }, [prefetchedPerms]);
 
   // Filter screens based on permissions
   const getVisibleScreens = () => {
@@ -68,14 +79,21 @@ const DrawerNavigator = () => {
 
       // Check view permission for the page
       const pagePerm = permissions[screen.permKey.toLowerCase()];
-      return pagePerm?.view === true;
+      const hasAccess = pagePerm?.view === true;
+
+      // Debug logging
+      console.log(`Permission check for ${screen.permKey}:`, pagePerm, '-> Access:', hasAccess);
+
+      return hasAccess;
     });
   };
 
+  // Show loading spinner while permissions are being loaded
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FD' }}>
         <ActivityIndicator size="large" color="#3a48c2" />
+        <Text style={{ marginTop: 10, color: '#666' }}>Loading...</Text>
       </View>
     );
   }
@@ -121,10 +139,12 @@ const App = () => {
           screenOptions={{
             headerShown: false,
           }}
-          initialRouteName="Login">
+          initialRouteName="Splash">
+          <Stack.Screen name="Splash" component={SplashScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Home" component={DrawerNavigator} />
           <Stack.Screen name="ReportResult" component={ReportResultScreen} />
+          <Stack.Screen name="SaleEdit" component={SalesEditScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
