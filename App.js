@@ -19,6 +19,7 @@ import ReportsScreen from './screens/ReportsScreen';
 import ReportResultScreen from './screens/ReportResultScreen';
 import SalesEditScreen from './screens/SalesEditScreen';
 import CustomDrawer from './components/CustomDrawer';
+import PrinterSettingsScreen from './screens/PrinterSettingsScreen';
 import { authService } from './services';
 
 const Stack = createStackNavigator();
@@ -145,6 +146,7 @@ const App = () => {
           <Stack.Screen name="Home" component={DrawerNavigator} />
           <Stack.Screen name="ReportResult" component={ReportResultScreen} />
           <Stack.Screen name="SaleEdit" component={SalesEditScreen} />
+          <Stack.Screen name="PrinterSettings" component={PrinterSettingsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

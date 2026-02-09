@@ -16,9 +16,21 @@ export const salesService = {
         return apiClient.get('/sales/my-sales', { params });
     },
 
-    // Create sale
+    // Create single sale
     createSale: async (data) => {
         return apiClient.post('/sales', data);
+    },
+
+    /**
+     * Create batch sales (multiple items with single invoice)
+     * @param {Array} items - Array of sale items
+     * @param {number} items[].product_id - Product ID
+     * @param {number} items[].qty - Quantity
+     * @param {string} items[].desc - Optional description
+     * @returns {Promise} - Response with invoice_number and all created sales
+     */
+    createBatchSales: async (items) => {
+        return apiClient.post('/sales/batch', { items });
     },
 
     // Update sale

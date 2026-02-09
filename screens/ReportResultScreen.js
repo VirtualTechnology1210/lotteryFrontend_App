@@ -47,6 +47,12 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                             <MaterialCommunityIcons name="basket-outline" size={20} color="#3a48c2" style={{ marginRight: 6 }} />
                             <Text style={styles.productName}>{item.items.length} - Items </Text>
                         </View>
+                        {item.invoice_number && (
+                            <View style={styles.invoiceBadge}>
+                                <MaterialCommunityIcons name="receipt" size={12} color="#3a48c2" />
+                                <Text style={styles.invoiceText}>Invoice: {item.invoice_number}</Text>
+                            </View>
+                        )}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                         <Text style={styles.totalAmount}>₹{item.total.toFixed(2)}</Text>
@@ -109,11 +115,19 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
             <View style={styles.reportHeader}>
                 <View style={styles.headerLeft}>
                     <Text style={styles.productName}>{item.product_name}</Text>
-                    {item.product_code && (
-                        <View style={styles.codeBadge}>
-                            <Text style={styles.codeText}>{item.product_code}</Text>
-                        </View>
-                    )}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {item.product_code && (
+                            <View style={styles.codeBadge}>
+                                <Text style={styles.codeText}>{item.product_code}</Text>
+                            </View>
+                        )}
+                        {item.invoice_number && (
+                            <View style={styles.invoiceBadge}>
+                                <MaterialCommunityIcons name="receipt" size={12} color="#3a48c2" />
+                                <Text style={styles.invoiceText}>Invoice: {item.invoice_number}</Text>
+                            </View>
+                        )}
+                    </View>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                     <Text style={styles.totalAmount}>₹{parseFloat(item.total).toFixed(2)}</Text>
@@ -182,51 +196,54 @@ const ReportResultScreen = ({ navigation, route }) => {
                 const { report, summary: apiSummary } = response.data;
                 const sales = report || [];
 
-                // Group transactions close in time (2 seconds window)
+                // Group transactions by invoice number
                 const groupTransactions = (transactions) => {
                     if (!transactions || transactions.length === 0) return [];
 
-                    // Ensure sorted by time descending
-                    const sorted = [...transactions].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    const invoiceGroups = {};
+                    const noInvoiceItems = [];
 
-                    const grouped = [];
-                    if (sorted.length === 0) return [];
-
-                    let currentGroup = {
-                        ...sorted[0],
-                        total: parseFloat(sorted[0].total),
-                        items: [sorted[0]],
-                        isGroup: false,
-                        qty: parseInt(sorted[0].qty || 0)
-                    };
-
-                    for (let i = 1; i < sorted.length; i++) {
-                        const item = sorted[i];
-                        const lastItemInGroup = currentGroup.items[currentGroup.items.length - 1]; // Closest in time
-
-                        const timeDiff = Math.abs(new Date(lastItemInGroup.created_at) - new Date(item.created_at));
-
-                        // If within 2 seconds, assume same batch
-                        if (timeDiff < 2000) {
-                            currentGroup.items.push(item);
-                            currentGroup.total += parseFloat(item.total);
-                            currentGroup.qty += parseInt(item.qty || 0);
-                            currentGroup.isGroup = true;
+                    transactions.forEach(item => {
+                        if (item.invoice_number) {
+                            if (!invoiceGroups[item.invoice_number]) {
+                                invoiceGroups[item.invoice_number] = {
+                                    invoice_number: item.invoice_number,
+                                    created_at: item.created_at,
+                                    items: [],
+                                    total: 0,
+                                    isGroup: false,
+                                    id: `invoice-${item.invoice_number}`
+                                };
+                            }
+                            invoiceGroups[item.invoice_number].items.push(item);
+                            invoiceGroups[item.invoice_number].total += parseFloat(item.total || 0);
                         } else {
-                            // Push finished group
-                            grouped.push(currentGroup);
-                            // Start new group
-                            currentGroup = {
+                            noInvoiceItems.push({
                                 ...item,
-                                total: parseFloat(item.total),
-                                items: [item],
                                 isGroup: false,
-                                qty: parseInt(item.qty || 0)
-                            };
+                                items: [item],
+                                total: parseFloat(item.total || 0),
+                                id: item.id
+                            });
                         }
-                    }
-                    grouped.push(currentGroup);
-                    return grouped;
+                    });
+
+                    // Mark groups with multiple items
+                    Object.values(invoiceGroups).forEach(group => {
+                        if (group.items.length > 1) {
+                            group.isGroup = true;
+                            group.id = `group-${group.invoice_number}`;
+                        } else {
+                            const singleItem = group.items[0];
+                            Object.assign(group, singleItem);
+                            group.total = parseFloat(singleItem.total);
+                        }
+                    });
+
+                    const allGroups = [...Object.values(invoiceGroups), ...noInvoiceItems];
+                    allGroups.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+                    return allGroups;
                 };
 
                 setReportData(groupTransactions(report));
@@ -494,6 +511,21 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: '#3a48c2',
         fontWeight: '600',
+    },
+    invoiceBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(58, 72, 194, 0.08)',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+        gap: 4,
+        alignSelf: 'flex-start',
+    },
+    invoiceText: {
+        fontSize: 11,
+        color: '#3a48c2',
+        fontWeight: '700',
     },
     totalAmount: {
         fontSize: 18,

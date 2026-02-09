@@ -13,7 +13,9 @@ import {
     Modal,
     Image,
     Dimensions,
-    FlatList
+    FlatList,
+    KeyboardAvoidingView,
+    ToastAndroid
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
@@ -22,6 +24,9 @@ import { categoryService } from '../services/categoryService';
 import { productService } from '../services/productService';
 import { salesService } from '../services/salesService';
 import { getImageUrl, authService } from '../services';
+import { invoiceSeriesService } from '../services/invoiceSeriesService';
+import PrinterService from '../printer/PrinterService';
+import { formatSalesReceipt } from '../printer/lotteryReceiptFormatter';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -188,6 +193,7 @@ const SalesScreen = ({ navigation }) => {
     const [desc, setDesc] = useState('');
 
     const [showAllCategories, setShowAllCategories] = useState(false);
+    const [nextInvoiceNumber, setNextInvoiceNumber] = useState(null);
 
     // Categories to display based on expansion state
     const displayedCategories = showAllCategories ? categories : categories.slice(0, 6);
@@ -212,6 +218,17 @@ const SalesScreen = ({ navigation }) => {
             }
         };
         loadPermissions();
+    }, []);
+
+    const fetchNextInvoiceNumber = useCallback(async () => {
+        try {
+            const series = await invoiceSeriesService.getSeriesByName('sales');
+            if (series) {
+                setNextInvoiceNumber(series.next_number);
+            }
+        } catch (error) {
+            console.error('Fetch invoice number error:', error);
+        }
     }, []);
 
     const fetchCategories = useCallback(async () => {
@@ -249,7 +266,8 @@ const SalesScreen = ({ navigation }) => {
     useFocusEffect(
         useCallback(() => {
             fetchCategories();
-        }, [fetchCategories])
+            fetchNextInvoiceNumber();
+        }, [fetchCategories, fetchNextInvoiceNumber])
     );
 
     const onRefresh = useCallback(() => {
@@ -288,6 +306,7 @@ const SalesScreen = ({ navigation }) => {
         const newItem = {
             category_id: selectedCategory.id,
             category_name: selectedCategory.category_name,
+            time_slots: selectedCategory.time_slots, // Include time slots for receipt printing
             product_id: selectedProduct.id,
             product_name: selectedProduct.product_name,
             product_code: selectedProduct.product_code,
@@ -356,6 +375,42 @@ const SalesScreen = ({ navigation }) => {
         );
     };
 
+    // Print receipt via Bluetooth (uses persistent connection for speed)
+    const handlePrintReceipt = async (invoiceNo, items, username) => {
+        try {
+            // Format receipt
+            const receiptBytes = formatSalesReceipt({
+                username: username,
+                invoiceNo: invoiceNo,
+                cartItems: items,
+            }, '80');
+
+            // Print using persistent connection (stays connected for next print)
+            await PrinterService.printWithPersistentConnection(receiptBytes);
+
+            console.log('[Print] Receipt printed successfully');
+        } catch (error) {
+            console.error('[Print] Error:', error);
+            const msg = error.message || 'Failed to print receipt';
+
+            // Check if it's a "no printer" error
+            if (msg.includes('No printer configured')) {
+                Alert.alert(
+                    'No Printer',
+                    'No printer configured. Would you like to set up a printer?',
+                    [
+                        { text: 'Later', style: 'cancel' },
+                        { text: 'Setup', onPress: () => navigation.navigate('PrinterSettings') }
+                    ]
+                );
+            } else if (Platform.OS === 'android') {
+                ToastAndroid.show(`Print: ${msg}`, ToastAndroid.LONG);
+            } else {
+                console.warn('Print Error:', msg);
+            }
+        }
+    };
+
     const handleSubmitSales = async () => {
         if (cartItems.length === 0) {
             Alert.alert('Error', 'Please add at least one product to cart');
@@ -364,29 +419,42 @@ const SalesScreen = ({ navigation }) => {
 
         setIsSubmitting(true);
         try {
-            // Submit each item as a separate sale
-            const promises = cartItems.map(item => {
-                const saleData = {
-                    product_id: item.product_id,
-                    qty: item.qty,
-                    desc: item.desc || null
-                };
-                return salesService.createSale(saleData);
-            });
+            // Submit all items as a batch with single invoice
+            const items = cartItems.map(item => ({
+                product_id: item.product_id,
+                qty: item.qty,
+                desc: item.desc || null
+            }));
 
-            await Promise.all(promises);
+            const response = await salesService.createBatchSales(items);
 
-            // Build success message
-            const itemsSummary = cartItems.map(item =>
-                `${item.product_name} (${item.qty} × ₹${item.price} = ₹${(item.qty * item.price).toFixed(2)})`
-            ).join('\n');
+            // Extract invoice number from response
+            const invoiceNumber = response.data?.invoice_number || 'N/A';
+            const itemsCount = response.data?.items_count || cartItems.length;
 
-            Alert.alert(
-                'Success',
-                `Sales recorded successfully!\n\n${itemsSummary}\n\nGrand Total: ₹${grandTotal.toFixed(2)}`
-            );
+            // Get username for receipt
+            const { user: userData } = await authService.getAuthData();
+            const username = userData?.name || userData?.username || 'User';
 
+            // Keep a copy of cart items for printing
+            const itemsToPrint = [...cartItems];
+
+            // Clear cart first
             setCartItems([]);
+            fetchNextInvoiceNumber();
+
+            // Show success with print option
+            Alert.alert(
+                '✓ Sale Complete',
+                `Invoice: ${invoiceNumber}\nItems: ${itemsCount}\nGrand Total: ₹${grandTotal.toFixed(2)}`,
+                [
+                    { text: 'Done', style: 'cancel' },
+                    {
+                        text: 'Print Receipt',
+                        onPress: () => handlePrintReceipt(invoiceNumber, itemsToPrint, username)
+                    }
+                ]
+            );
         } catch (error) {
             console.error('Submit sales error:', error);
             const msg = error.response?.data?.message || 'Failed to create sales';
@@ -490,8 +558,8 @@ const SalesScreen = ({ navigation }) => {
                             <View style={styles.cartSection}>
                                 <View style={styles.cartHeader}>
                                     <View style={styles.cartTitleRow}>
-                                        <MaterialCommunityIcons name="cart" size={22} color="#1a1a1a" />
-                                        <Text style={styles.cartTitle}>Cart ({cartItems.length} items)</Text>
+                                        <MaterialCommunityIcons name="receipt" size={22} color="#3a48c2" />
+                                        <Text style={styles.cartTitle}>Invoice: {nextInvoiceNumber || '...'}</Text>
                                     </View>
                                     <TouchableOpacity onPress={handleClearCart}>
                                         <Text style={styles.clearAllText}>Clear All</Text>
@@ -621,7 +689,10 @@ const SalesScreen = ({ navigation }) => {
                     setSelectedProduct(null);
                 }}
             >
-                <View style={styles.modalOverlay}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={styles.modalOverlay}
+                >
                     <View style={styles.qtyModalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Add Products</Text>
@@ -636,95 +707,86 @@ const SalesScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         </View>
 
-                        {selectedProduct && (
-                            <>
-                                {/* Product Info */}
-                                <View style={styles.productInfo}>
-                                    <Text style={styles.productInfoName}>{selectedProduct.product_name}</Text>
-                                    <Text style={styles.productInfoCode}>{selectedProduct.product_code}</Text>
-                                    <View style={styles.priceRow}>
-                                        <Text style={styles.priceLabel}>Unit Price:</Text>
-                                        <Text style={styles.priceValue}>₹{selectedProduct.price}</Text>
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            {selectedProduct && (
+                                <>
+                                    {/* Product Info */}
+                                    <View style={styles.productInfo}>
+                                        <Text style={styles.productInfoName}>{selectedProduct.product_name}</Text>
+                                        <Text style={styles.productInfoCode}>{selectedProduct.product_code}</Text>
+                                        <View style={styles.priceRow}>
+                                            <Text style={styles.priceLabel}>Unit Price:</Text>
+                                            <Text style={styles.priceValue}>₹{selectedProduct.price}</Text>
+                                        </View>
                                     </View>
-                                </View>
 
-                                {/* Quantity Input */}
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Quantity *</Text>
-                                    <View style={styles.qtyContainer}>
-                                        <TouchableOpacity
-                                            style={styles.qtyBtn}
-                                            onPress={() => {
-                                                const newQty = Math.max(1, parseInt(qty || 1) - 1);
-                                                setQty(newQty.toString());
-                                            }}
-                                        >
-                                            <MaterialCommunityIcons name="minus" size={24} color="#3a48c2" />
-                                        </TouchableOpacity>
+                                    {/* Quantity Input */}
+                                    <View style={styles.inputGroup}>
+                                        <Text style={styles.label}>Quantity *</Text>
+                                        <View style={styles.qtyContainer}>
+                                            <TouchableOpacity
+                                                style={styles.qtyBtn}
+                                                onPress={() => {
+                                                    const newQty = Math.max(1, parseInt(qty || 1) - 1);
+                                                    setQty(newQty.toString());
+                                                }}
+                                            >
+                                                <MaterialCommunityIcons name="minus" size={24} color="#3a48c2" />
+                                            </TouchableOpacity>
+                                            <TextInput
+                                                style={styles.qtyInput}
+                                                value={qty}
+                                                onChangeText={setQty}
+                                                keyboardType="numeric"
+                                                textAlign="center"
+                                            />
+                                            <TouchableOpacity
+                                                style={styles.qtyBtn}
+                                                onPress={() => {
+                                                    const newQty = parseInt(qty || 0) + 1;
+                                                    setQty(newQty.toString());
+                                                }}
+                                            >
+                                                <MaterialCommunityIcons name="plus" size={24} color="#3a48c2" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+
+                                    {/* Description */}
+                                    <View style={styles.inputGroup}>
+                                        <Text style={styles.label}>Lottery No *</Text>
                                         <TextInput
-                                            style={styles.qtyInput}
-                                            value={qty}
-                                            onChangeText={setQty}
-                                            keyboardType="numeric"
-                                            textAlign="center"
+                                            style={[styles.input, styles.textArea]}
+                                            placeholder="Enter lottery number"
+                                            value={desc}
+                                            onChangeText={setDesc}
+                                            placeholderTextColor="#999"
+                                            multiline
+                                            numberOfLines={3}
                                         />
-                                        <TouchableOpacity
-                                            style={styles.qtyBtn}
-                                            onPress={() => {
-                                                const newQty = parseInt(qty || 0) + 1;
-                                                setQty(newQty.toString());
-                                            }}
-                                        >
-                                            <MaterialCommunityIcons name="plus" size={24} color="#3a48c2" />
-                                        </TouchableOpacity>
                                     </View>
-                                </View>
 
-                                {/* Description */}
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Description *</Text>
-                                    <TextInput
-                                        style={[styles.input, styles.textArea]}
-                                        placeholder="Add notes about this item..."
-                                        value={desc}
-                                        onChangeText={setDesc}
-                                        placeholderTextColor="#999"
-                                        multiline
-                                        numberOfLines={3}
-                                    />
-                                </View>
+                                    {/* Total Preview */}
+                                    <View style={styles.totalContainer}>
+                                        <Text style={styles.totalLabel}>Item Total</Text>
+                                        <Text style={styles.totalValue}>
+                                            ₹{(selectedProduct.price * (parseInt(qty) || 0)).toFixed(2)}
+                                        </Text>
+                                    </View>
 
-                                {/* Total Preview */}
-                                <View style={styles.totalContainer}>
-                                    <Text style={styles.totalLabel}>Item Total</Text>
-                                    <Text style={styles.totalValue}>
-                                        ₹{(selectedProduct.price * (parseInt(qty) || 0)).toFixed(2)}
-                                    </Text>
-                                </View>
-
-                                {/* Add to Cart Button */}
-                                <TouchableOpacity
-                                    style={styles.addToCartButton}
-                                    onPress={handleAddToCart}
-                                >
-                                    <MaterialCommunityIcons name="cart-plus" size={22} color="#fff" />
-                                    <Text style={styles.addToCartButtonText}>Add</Text>
-                                </TouchableOpacity>
-
-                                {/* Continue Shopping Button */}
-                                <TouchableOpacity
-                                    style={styles.continueShoppingBtn}
-                                    onPress={() => {
-                                        handleAddToCart();
-                                        // Re-open product modal for same category if we have one
-                                    }}
-                                >
-                                    <Text style={styles.continueShoppingText}>Add & Continue Shopping</Text>
-                                </TouchableOpacity>
-                            </>
-                        )}
+                                    {/* Add to Cart Button */}
+                                    <TouchableOpacity
+                                        style={styles.addToCartButton}
+                                        onPress={handleAddToCart}
+                                    >
+                                        <MaterialCommunityIcons name="cart-plus" size={22} color="#fff" />
+                                        <Text style={styles.addToCartButtonText}>Add</Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </ScrollView>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </View>
     );

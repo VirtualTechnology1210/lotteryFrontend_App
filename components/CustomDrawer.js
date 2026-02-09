@@ -102,6 +102,19 @@ const CustomDrawer = (props) => {
 
             {/* Enhanced Footer Section */}
             <View style={styles.footer}>
+                {/* Printer Settings Button */}
+                <TouchableOpacity
+                    style={styles.printerButton}
+                    onPress={() => props.navigation.navigate('PrinterSettings')}
+                    activeOpacity={0.7}
+                >
+                    <View style={styles.printerButtonInner}>
+                        <MaterialCommunityIcons name="printer-settings" size={20} color="#3a48c2" />
+                        <Text style={styles.printerButtonText}>Printer Settings</Text>
+                        <MaterialCommunityIcons name="chevron-right" size={20} color="#999" />
+                    </View>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                     style={styles.logoutButton}
                     onPress={handleLogout}
@@ -280,6 +293,27 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontWeight: '700',
         letterSpacing: 0.5,
+    },
+    printerButton: {
+        marginBottom: 12,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        overflow: 'hidden',
+    },
+    printerButtonInner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+    },
+    printerButtonText: {
+        flex: 1,
+        fontSize: 15,
+        color: '#333',
+        fontWeight: '600',
+        marginLeft: 12,
     },
 });
 

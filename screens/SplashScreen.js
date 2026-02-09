@@ -6,7 +6,8 @@ import {
     Animated,
     StatusBar,
     Easing,
-    Dimensions
+    Dimensions,
+    Platform
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
