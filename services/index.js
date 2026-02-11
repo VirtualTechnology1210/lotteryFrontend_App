@@ -20,7 +20,7 @@ export const getImageUrl = (path) => {
 // Create axios instance with optimized timeout
 const apiClient = axios.create({
     baseURL: BASE_URL,
-    timeout: 5000, // Reduced from 10s to 5s for faster failure detection
+    timeout: 10000, // Increased to 10s for better reliability on slower connections
     headers: {
         'Content-Type': 'application/json',
     },
@@ -43,7 +43,17 @@ apiClient.interceptors.request.use(
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
     (response) => response.data,
-    (error) => {
+    async (error) => {
+        // Handle 401 Unauthorized errors (expired or invalid token)
+        if (error.response?.status === 401) {
+            console.warn('Unauthorized access detected (401). Clearing session...');
+            try {
+                // Clear storage to force re-login on next app start or session check
+                await AsyncStorage.multiRemove(['userToken', 'userProfile', 'userPermissions']);
+            } catch (e) {
+                console.error('Error clearing storage on 401:', e);
+            }
+        }
         const message = error.response?.data?.message || 'Something went wrong';
         return Promise.reject({ ...error, message });
     }

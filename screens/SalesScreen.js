@@ -113,9 +113,17 @@ const ProductItem = memo(({ product, onSelect }) => {
             onPress={() => onSelect(product)}
         >
             <View style={styles.productItemContent}>
-                <Text style={styles.productItemName} numberOfLines={2}>
-                    {product.product_name}
-                </Text>
+                <View style={styles.productNameRow}>
+                    <Text style={styles.productItemName} numberOfLines={2}>
+                        {product.product_name}
+                    </Text>
+                    {product.box === 1 && (
+                        <View style={styles.productItemBadge}>
+                            <MaterialCommunityIcons name="cube-outline" size={10} color="#fff" />
+                            <Text style={styles.productItemBadgeText}>Box</Text>
+                        </View>
+                    )}
+                </View>
                 <Text style={styles.productItemCode}>{product.product_code}</Text>
             </View>
             <View style={styles.productItemRight}>
@@ -191,6 +199,9 @@ const SalesScreen = ({ navigation }) => {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [qty, setQty] = useState('1');
     const [desc, setDesc] = useState('');
+    const [lotteryNo, setLotteryNo] = useState('');
+    const [permutations, setPermutations] = useState([]);
+    const [isBoxProduct, setIsBoxProduct] = useState(false);
 
     const [showAllCategories, setShowAllCategories] = useState(false);
     const [nextInvoiceNumber, setNextInvoiceNumber] = useState(null);
@@ -283,10 +294,47 @@ const SalesScreen = ({ navigation }) => {
         setShowProductModal(true);
     }, []);
 
+    // Generate all permutations of an array
+    const generatePermutations = (arr) => {
+        if (arr.length <= 1) return [arr];
+        const result = [];
+        for (let i = 0; i < arr.length; i++) {
+            const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+            const perms = generatePermutations(rest);
+            for (const perm of perms) {
+                result.push([arr[i], ...perm]);
+            }
+        }
+        return result;
+    };
+
+    // Handle lottery number change for box products
+    const handleLotteryNoChange = (text) => {
+        // Only allow digits
+        const digitsOnly = text.replace(/[^0-9]/g, '').slice(0, 5);
+        setLotteryNo(digitsOnly);
+
+        if (digitsOnly.length >= 3) {
+            const digits = digitsOnly.split('');
+            const perms = generatePermutations(digits);
+            const permNumbers = [...new Set(perms.map(p => p.join('')))];
+            setPermutations(permNumbers);
+            setQty(permNumbers.length.toString());
+            setDesc(permNumbers.join(', '));
+        } else {
+            setPermutations([]);
+            setQty('1');
+            setDesc('');
+        }
+    };
+
     const handleProductSelect = (product) => {
         setSelectedProduct(product);
         setQty('1');
         setDesc('');
+        setLotteryNo('');
+        setPermutations([]);
+        setIsBoxProduct(product.box === 1);
         setShowProductModal(false);
         setShowQtyModal(true);
     };
@@ -303,6 +351,12 @@ const SalesScreen = ({ navigation }) => {
             return;
         }
 
+        // Validate Lottery No (description)
+        if (!desc.trim()) {
+            Alert.alert('Validation Error', 'Please enter the lottery number');
+            return;
+        }
+
         const newItem = {
             category_id: selectedCategory.id,
             category_name: selectedCategory.category_name,
@@ -312,7 +366,7 @@ const SalesScreen = ({ navigation }) => {
             product_code: selectedProduct.product_code,
             price: selectedProduct.price,
             qty: quantity,
-            desc: desc.trim() || null
+            desc: desc.trim()
         };
 
         // Check if product already exists in cart
@@ -720,51 +774,120 @@ const SalesScreen = ({ navigation }) => {
                                         </View>
                                     </View>
 
-                                    {/* Quantity Input */}
-                                    <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Quantity *</Text>
-                                        <View style={styles.qtyContainer}>
-                                            <TouchableOpacity
-                                                style={styles.qtyBtn}
-                                                onPress={() => {
-                                                    const newQty = Math.max(1, parseInt(qty || 1) - 1);
-                                                    setQty(newQty.toString());
-                                                }}
-                                            >
-                                                <MaterialCommunityIcons name="minus" size={24} color="#3a48c2" />
-                                            </TouchableOpacity>
-                                            <TextInput
-                                                style={styles.qtyInput}
-                                                value={qty}
-                                                onChangeText={setQty}
-                                                keyboardType="numeric"
-                                                textAlign="center"
-                                            />
-                                            <TouchableOpacity
-                                                style={styles.qtyBtn}
-                                                onPress={() => {
-                                                    const newQty = parseInt(qty || 0) + 1;
-                                                    setQty(newQty.toString());
-                                                }}
-                                            >
-                                                <MaterialCommunityIcons name="plus" size={24} color="#3a48c2" />
-                                            </TouchableOpacity>
-                                        </View>
-                                    </View>
+                                    {/* Lottery No Input - Different for box products */}
+                                    {isBoxProduct ? (
+                                        <>
+                                            <View style={styles.inputGroup}>
+                                                <View style={styles.labelRow}>
+                                                    <Text style={styles.label}>Lottery No *</Text>
+                                                    <View style={styles.boxBadge}>
+                                                        <MaterialCommunityIcons name="cube-outline" size={14} color="#fff" />
+                                                        <Text style={styles.boxBadgeText}>Box</Text>
+                                                    </View>
+                                                </View>
+                                                <TextInput
+                                                    style={styles.input}
+                                                    placeholder="Enter lottery digits"
+                                                    value={lotteryNo}
+                                                    onChangeText={handleLotteryNoChange}
+                                                    keyboardType="numeric"
+                                                    placeholderTextColor="#999"
+                                                    maxLength={6}
+                                                />
+                                            </View>
 
-                                    {/* Description */}
-                                    <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Lottery No *</Text>
-                                        <TextInput
-                                            style={[styles.input, styles.textArea]}
-                                            placeholder="Enter lottery number"
-                                            value={desc}
-                                            onChangeText={setDesc}
-                                            placeholderTextColor="#999"
-                                            multiline
-                                            numberOfLines={3}
-                                        />
-                                    </View>
+                                            {/* Permutations Display */}
+                                            {permutations.length > 0 && (
+                                                <View style={styles.inputGroup}>
+                                                    <View style={styles.permHeaderRow}>
+                                                        <Text style={styles.label}>
+                                                            All Permutations ({permutations.length})
+                                                        </Text>
+                                                        <View style={styles.permCountBadge}>
+                                                            <Text style={styles.permCountText}>
+                                                                Qty: {permutations.length}
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                    <View style={styles.permutationsContainer}>
+                                                        <ScrollView
+                                                            style={styles.permutationsScroll}
+                                                            nestedScrollEnabled={true}
+                                                        >
+                                                            <View style={styles.permutationsGrid}>
+                                                                {permutations.map((perm, idx) => (
+                                                                    <View key={idx} style={styles.permChip}>
+                                                                        <Text style={styles.permChipText}>{perm}</Text>
+                                                                    </View>
+                                                                ))}
+                                                            </View>
+                                                        </ScrollView>
+                                                    </View>
+                                                </View>
+                                            )}
+
+                                            {/* Quantity (auto-set, read-only for box) */}
+                                            <View style={styles.inputGroup}>
+                                                <Text style={styles.label}>Quantity</Text>
+                                                <View style={styles.qtyContainer}>
+                                                    <TextInput
+                                                        style={[styles.qtyInput, styles.qtyInputDisabled]}
+                                                        value={qty}
+                                                        editable={false}
+                                                        textAlign="center"
+                                                    />
+                                                </View>
+                                            </View>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {/* Normal Quantity Input */}
+                                            <View style={styles.inputGroup}>
+                                                <Text style={styles.label}>Quantity *</Text>
+                                                <View style={styles.qtyContainer}>
+                                                    <TouchableOpacity
+                                                        style={styles.qtyBtn}
+                                                        onPress={() => {
+                                                            const newQty = Math.max(1, parseInt(qty || 1) - 1);
+                                                            setQty(newQty.toString());
+                                                        }}
+                                                    >
+                                                        <MaterialCommunityIcons name="minus" size={24} color="#3a48c2" />
+                                                    </TouchableOpacity>
+                                                    <TextInput
+                                                        style={styles.qtyInput}
+                                                        value={qty}
+                                                        onChangeText={setQty}
+                                                        keyboardType="numeric"
+                                                        textAlign="center"
+                                                    />
+                                                    <TouchableOpacity
+                                                        style={styles.qtyBtn}
+                                                        onPress={() => {
+                                                            const newQty = parseInt(qty || 0) + 1;
+                                                            setQty(newQty.toString());
+                                                        }}
+                                                    >
+                                                        <MaterialCommunityIcons name="plus" size={24} color="#3a48c2" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+
+                                            {/* Normal Lottery No */}
+                                            <View style={styles.inputGroup}>
+                                                <Text style={styles.label}>Lottery No *</Text>
+                                                <TextInput
+                                                    style={[styles.input, styles.textArea]}
+                                                    placeholder="Enter lottery number"
+                                                    value={desc}
+                                                    onChangeText={setDesc}
+                                                    placeholderTextColor="#999"
+                                                    multiline
+                                                    numberOfLines={3}
+                                                />
+                                            </View>
+                                        </>
+                                    )}
 
                                     {/* Total Preview */}
                                     <View style={styles.totalContainer}>
@@ -1261,6 +1384,27 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#888',
     },
+    productNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+        marginBottom: 4,
+    },
+    productItemBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#3a48c2',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        gap: 2,
+    },
+    productItemBadgeText: {
+        color: '#fff',
+        fontSize: 10,
+        fontWeight: 'bold',
+        textTransform: 'uppercase',
+    },
     productItemRight: {
         alignItems: 'flex-end',
         gap: 4,
@@ -1412,6 +1556,81 @@ const styles = StyleSheet.create({
         color: '#3a48c2',
         fontSize: 14,
         fontWeight: '600',
+    },
+    // Box Permutation Styles
+    labelRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    boxBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#3a48c2',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        gap: 4,
+    },
+    boxBadgeText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    permHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    permCountBadge: {
+        backgroundColor: '#3a48c2',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    permCountText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    permutationsContainer: {
+        backgroundColor: '#F0F1FF',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#D0D4FF',
+        padding: 10,
+    },
+    permutationsScroll: {
+        maxHeight: 160,
+    },
+    permutationsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    permChip: {
+        backgroundColor: '#fff',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#3a48c2',
+        elevation: 1,
+        shadowColor: '#3a48c2',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+    },
+    permChipText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#3a48c2',
+        letterSpacing: 1,
+    },
+    qtyInputDisabled: {
+        backgroundColor: '#E8E8E8',
+        color: '#666',
     },
 });
 

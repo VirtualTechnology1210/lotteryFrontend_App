@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useRef } from 'react';
 import {
     View,
     Text,
@@ -126,6 +126,7 @@ const DashboardScreen = ({ navigation, route }) => {
     const prefetchedData = route.params?.dashboardData;
     const [isLoading, setIsLoading] = useState(!prefetchedData);
     const [refreshing, setRefreshing] = useState(false);
+    const hasInitiallyLoaded = useRef(false);
     const [userName, setUserName] = useState('');
     const [reportData, setReportData] = useState({
         totalSales: 0,
@@ -263,6 +264,11 @@ const DashboardScreen = ({ navigation, route }) => {
             }
         } catch (error) {
             console.error("Dashboard fetch error:", error);
+            // Handle unauthorized access - clear session and redirect to login
+            if (error.response?.status === 401 || error.message?.includes('token')) {
+                await authService.logout();
+                navigation.replace('Login');
+            }
         } finally {
             setIsLoading(false);
             setRefreshing(false);
@@ -278,17 +284,19 @@ const DashboardScreen = ({ navigation, route }) => {
         }
     }, [prefetchedData, fetchDashboardData]);
 
-    // Auto-refresh when screen comes into focus
+    // Auto-refresh when screen comes into focus (skip the very first focus to avoid double-fetch)
     useEffect(() => {
         const unsubscribe = navigation.addListener('focus', () => {
-            // Only refresh if not initial load (component already mounted)
-            if (!isLoading) {
-                fetchDashboardData();
+            if (!hasInitiallyLoaded.current) {
+                // Skip - initial load useEffect already handles this
+                hasInitiallyLoaded.current = true;
+                return;
             }
+            fetchDashboardData();
         });
 
         return unsubscribe;
-    }, [navigation, isLoading]);
+    }, [navigation, fetchDashboardData]);
 
     const onRefresh = useCallback(() => {
         setRefreshing(true);

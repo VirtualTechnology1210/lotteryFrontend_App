@@ -30,9 +30,14 @@ const ProductListItem = memo(({ product, onEdit, onDelete, canEdit, canDelete })
             <Text style={styles.productName}>{product.product_name}</Text>
             <View style={styles.metaRow}>
                 <View style={[styles.badge, styles.priceBadge]}>
-                    <MaterialCommunityIcons name="cash" size={12} color="#15803d" />
                     <Text style={styles.priceText}>₹{product.price}</Text>
                 </View>
+                {product.box === 1 && (
+                    <View style={[styles.badge, styles.boxBadge]}>
+                        <MaterialCommunityIcons name="package-variant-closed" size={12} color="#854d0e" />
+                        <Text style={styles.boxText}>Box</Text>
+                    </View>
+                )}
             </View>
             {product.category_name && (
                 <Text style={styles.categoryLabel}>{product.category_name}</Text>
@@ -81,6 +86,7 @@ const ProductScreen = ({ navigation }) => {
     const [productName, setProductName] = useState('');
     const [productCode, setProductCode] = useState('');
     const [price, setPrice] = useState('');
+    const [box, setBox] = useState(0); // 0 = No, 1 = Yes
     const [editingProduct, setEditingProduct] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isFocus, setIsFocus] = useState(false);
@@ -145,6 +151,7 @@ const ProductScreen = ({ navigation }) => {
         setProductName(product.product_name);
         setProductCode(product.product_code);
         setPrice(product.price.toString());
+        setBox(product.box || 0);
         setEditingProduct(product);
         setShowAddModal(true);
     }, []);
@@ -154,6 +161,7 @@ const ProductScreen = ({ navigation }) => {
         setProductName('');
         setProductCode('');
         setPrice('');
+        setBox(0);
         setEditingProduct(null);
     };
 
@@ -191,7 +199,8 @@ const ProductScreen = ({ navigation }) => {
                 category_id: categoryId,
                 product_name: productName.trim(),
                 product_code: productCode.trim(),
-                price: parseFloat(price)
+                price: parseFloat(price),
+                box: box
             };
 
             if (editingProduct) {
@@ -350,6 +359,18 @@ const ProductScreen = ({ navigation }) => {
                                 keyboardType="numeric"
                             />
                         </View>
+
+                        {/* Box Selection (Yes/No) */}
+                        <TouchableOpacity
+                            style={styles.checkboxContainer}
+                            onPress={() => setBox(box === 1 ? 0 : 1)}
+                            activeOpacity={0.7}
+                        >
+                            <View style={[styles.checkbox, box === 1 && styles.checkboxSelected]}>
+                                {box === 1 && <MaterialCommunityIcons name="check" size={18} color="#fff" />}
+                            </View>
+                            <Text style={styles.checkboxLabel}>Box? </Text>
+                        </TouchableOpacity>
 
                         {/* Submit Button */}
                         <TouchableOpacity
@@ -533,6 +554,36 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: 'bold',
     },
+    checkboxContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 25,
+        backgroundColor: '#F5F7FA',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+    },
+    checkbox: {
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: '#3a48c2',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+        backgroundColor: '#fff',
+    },
+    checkboxSelected: {
+        backgroundColor: '#3a48c2',
+        borderColor: '#3a48c2',
+    },
+    checkboxLabel: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1a1a1a',
+    },
     productsContainer: {
         padding: 20,
     },
@@ -622,6 +673,14 @@ const styles = StyleSheet.create({
     priceText: {
         fontSize: 12,
         color: '#15803d',
+        fontWeight: 'bold',
+    },
+    boxBadge: {
+        backgroundColor: '#FEF9C3',
+    },
+    boxText: {
+        fontSize: 12,
+        color: '#854d0e',
         fontWeight: 'bold',
     },
     categoryLabel: {

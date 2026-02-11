@@ -89,31 +89,42 @@ const SplashScreen = ({ navigation }) => {
 
                 if (token && user) {
                     try {
-                        // Parallel fetch for permissions and dashboard data
-                        const [permResponse, dashboardResponse] = await Promise.all([
+                        // Use allSettled so one failure doesn't kill the other
+                        const [permResult, dashboardResult] = await Promise.allSettled([
                             permissionService.getMyPermissions(),
                             reportService.getSalesReport({ limit: 100 })
                         ]);
 
-                        // Handle Permissions
-                        if (permResponse?.data?.permissions) {
-                            const permsFromApi = permResponse.data.permissions;
-                            const permMap = {};
-                            Object.keys(permsFromApi).forEach(key => {
-                                permMap[key.toLowerCase()] = permsFromApi[key];
-                            });
-                            await AsyncStorage.setItem('userPermissions', JSON.stringify(permMap));
-                            navigationParams.permissions = permMap;
-                        }
+                        // Check for auth errors (401) in either result
+                        const authFailed = [permResult, dashboardResult].some(r =>
+                            r.status === 'rejected' &&
+                            (r.reason?.response?.status === 401 || r.reason?.message?.includes('token'))
+                        );
 
-                        // Handle Dashboard Data
-                        if (dashboardResponse?.data) {
-                            navigationParams.dashboardData = dashboardResponse.data;
-                        }
+                        if (authFailed) {
+                            console.warn('Splash: Auth failed, redirecting to login');
+                            targetRoute = 'Login';
+                        } else {
+                            // Handle Permissions (even if dashboard failed)
+                            if (permResult.status === 'fulfilled' && permResult.value?.data?.permissions) {
+                                const permsFromApi = permResult.value.data.permissions;
+                                const permMap = {};
+                                Object.keys(permsFromApi).forEach(key => {
+                                    permMap[key.toLowerCase()] = permsFromApi[key];
+                                });
+                                await AsyncStorage.setItem('userPermissions', JSON.stringify(permMap));
+                                navigationParams.permissions = permMap;
+                            }
 
-                        targetRoute = 'Home';
-                    } catch (permError) {
-                        console.warn('Splash: Pre-fetch failed, using cached perms', permError);
+                            // Handle Dashboard Data (only if it succeeded)
+                            if (dashboardResult.status === 'fulfilled' && dashboardResult.value?.data) {
+                                navigationParams.dashboardData = dashboardResult.value.data;
+                            }
+
+                            targetRoute = 'Home';
+                        }
+                    } catch (error) {
+                        console.warn('Splash: Unexpected error', error);
                         targetRoute = 'Home';
                     }
                 }

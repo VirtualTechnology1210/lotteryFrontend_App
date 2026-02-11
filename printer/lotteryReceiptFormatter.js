@@ -113,6 +113,24 @@ const wrapText = (text, maxWidth) => {
     return lines;
 };
 
+const getDescLines = (descText, maxPairs = 2) => {
+    const text = str(descText);
+    if (!text || text === '-') return ['-'];
+    if (!text.includes(',')) return [wrapText(text, 12)[0]]; // Limit single long desc
+
+    const parts = text.split(',').map(p => p.trim()).filter(p => p);
+    const lines = [];
+    for (let i = 0; i < parts.length; i += maxPairs) {
+        let line = '';
+        for (let j = 0; j < maxPairs && (i + j) < parts.length; j++) {
+            if (line) line += ' , ';
+            line += parts[i + j];
+        }
+        lines.push(line);
+    }
+    return lines;
+};
+
 /**
  * Format lottery sales receipt for thermal printer
  * 
@@ -171,17 +189,18 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
         ln('.'.repeat(W));
 
         // Table Header
-        // 80mm: No.(4) | Product(14) | Desc(8) | Qty(4) | Rate(8) | Amount(10) total 48
-        // 58mm: No.(2) | Product(9) | Desc(5) | Qty(3) | Rate(5) | Amount(8) total 32
+        // 80mm: No.(4) | Details(12) | Number(12) | Qty(4) | Rate(7) | Amount(9) total 48
+        // 58mm: No.(2) | Details(6) | Number(11) | Qty(3) | Rate(4) | Amount(6) total 32
 
         cmd(CMD.BOLD_ON);
         if (W >= 48) {
-            const header = 'No.'.padEnd(4) + 'Details'.padEnd(14) + 'Number'.padStart(8) + 'Qty'.padStart(4) + 'Rate'.padStart(8) + 'Amount'.padStart(10);
+            const header = 'No.'.padEnd(4) + 'Details'.padEnd(12) + 'Number'.padStart(12) + 'Qty'.padStart(4) + 'Rate'.padStart(7) + 'Amount'.padStart(9);
             ln(header);
         } else {
-            const header = 'No.'.padEnd(2) + 'Details'.padEnd(9) + 'Number'.padStart(5) + 'Qty'.padStart(3) + 'Rate'.padStart(5) + 'Amount'.padStart(8);
+            const header = 'No.'.padEnd(2) + 'Details'.padEnd(6) + 'Number'.padStart(11) + 'Qty'.padStart(3) + 'Rate'.padStart(4) + 'Amount'.padStart(6);
             ln(header);
         }
+
         cmd(CMD.BOLD_OFF);
         ln('.'.repeat(W));
 
@@ -190,7 +209,8 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
         let totalPrice = 0;
 
         items.forEach((item, index) => {
-            const no = `${index + 1}.`.padEnd(W >= 48 ? 4 : 2);
+            const noWidth = W >= 48 ? 4 : 2;
+            const no = `${index + 1}.`.padEnd(noWidth);
             const productName = str(item.productName || item.product_name || '');
             const desc = str(item.desc || '-');
             const qty = Number(item.qty) || 0;
@@ -201,44 +221,50 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
             totalPrice += lineTotal;
 
             if (W >= 48) {
-                // 80mm paper
-                const maxNameWidth = 14;
-                const descStr = desc.substring(0, 8).padStart(8);
-                const qtyStr = String(qty).padStart(4);
-                const rateStr = price.toFixed(2).padStart(8);
-                const amountStr = lineTotal.toFixed(2).padStart(10);
+                // 80mm paper layout: 4 | 12 | 12 | 4 | 7 | 9 = 48
+                const maxNameW = 12;
+                const maxDescW = 12;
+                const nameLines = wrapText(productName, maxNameW);
+                const descLines = getDescLines(desc);
+                const maxSubLines = Math.max(nameLines.length, descLines.length);
 
-                if (productName.length > maxNameWidth) {
-                    const nameLines = wrapText(productName, maxNameWidth);
-                    nameLines.forEach((nameLine, idx) => {
-                        if (idx === 0) {
-                            ln(no + nameLine.padEnd(maxNameWidth) + descStr + qtyStr + rateStr + amountStr);
-                        } else {
-                            ln(' '.repeat(4) + nameLine);
-                        }
-                    });
-                } else {
-                    ln(no + productName.padEnd(maxNameWidth) + descStr + qtyStr + rateStr + amountStr);
+                const qtyStr = String(qty).padStart(4);
+                const rateStr = price.toFixed(2).padStart(7);
+                const amountStr = lineTotal.toFixed(2).padStart(9);
+
+                for (let i = 0; i < maxSubLines; i++) {
+                    const rowNo = i === 0 ? no : ' '.repeat(noWidth);
+                    const rowName = (nameLines[i] || '').padEnd(maxNameW);
+                    const rowDesc = (descLines[i] || '').padStart(maxDescW);
+
+                    if (i === 0) {
+                        ln(rowNo + rowName + rowDesc + qtyStr + rateStr + amountStr);
+                    } else {
+                        ln(rowNo + rowName + rowDesc);
+                    }
                 }
             } else {
-                // 58mm paper
-                const maxNameWidth = 9;
-                const qtyStr = String(qty).padStart(3);
-                const descStr = desc.substring(0, 5).padStart(5);
-                const rateStr = price.toFixed(0).padStart(5);
-                const amountStr = lineTotal.toFixed(2).padStart(8);
+                // 58mm paper layout: 2 | 6 | 11 | 3 | 4 | 6 = 32
+                const maxNameW = 6;
+                const maxDescW = 11;
+                const nameLines = wrapText(productName, maxNameW);
+                const descLines = getDescLines(desc);
+                const maxSubLines = Math.max(nameLines.length, descLines.length);
 
-                if (productName.length > maxNameWidth) {
-                    const nameLines = wrapText(productName, maxNameWidth);
-                    nameLines.forEach((nameLine, idx) => {
-                        if (idx === 0) {
-                            ln(no + nameLine.padEnd(maxNameWidth) + descStr + qtyStr + rateStr + amountStr);
-                        } else {
-                            ln(' '.repeat(2) + nameLine);
-                        }
-                    });
-                } else {
-                    ln(no + productName.padEnd(maxNameWidth) + descStr + qtyStr + rateStr + amountStr);
+                const qtyStr = String(qty).padStart(3);
+                const rateStr = price.toFixed(0).padStart(4);
+                const amountStr = lineTotal.toFixed(2).padStart(6);
+
+                for (let i = 0; i < maxSubLines; i++) {
+                    const rowNo = i === 0 ? no : ' '.repeat(noWidth);
+                    const rowName = (nameLines[i] || '').padEnd(maxNameW);
+                    const rowDesc = (descLines[i] || '').padStart(maxDescW);
+
+                    if (i === 0) {
+                        ln(rowNo + rowName + rowDesc + qtyStr + rateStr + amountStr);
+                    } else {
+                        ln(rowNo + rowName + rowDesc);
+                    }
                 }
             }
         });
@@ -249,15 +275,15 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
 
         // Total row in table format
         if (W >= 48) {
-            const label = 'Total'.padEnd(26); // No(4)+Prod(14)+Desc(8)
+            const label = 'Total'.padEnd(28); // No(4)+Details(12)+Number(12)
             const qtyStr = String(totalQty).padStart(4);
-            const amtStr = totalPrice.toFixed(2).padStart(10);
-            ln(label + qtyStr + ' '.repeat(8) + amtStr);
+            const amtStr = totalPrice.toFixed(2).padStart(9);
+            ln(label + qtyStr + ' '.repeat(7) + amtStr);
         } else {
-            const label = 'Total'.padEnd(16); // No(2)+Prod(9)+Desc(5)
+            const label = 'Total'.padEnd(19); // No(2)+Details(6)+Number(11)
             const qtyStr = String(totalQty).padStart(3);
-            const amtStr = totalPrice.toFixed(2).padStart(8);
-            ln(label + qtyStr + ' '.repeat(5) + amtStr);
+            const amtStr = totalPrice.toFixed(2).padStart(6);
+            ln(label + qtyStr + ' '.repeat(4) + amtStr);
         }
         cmd(CMD.BOLD_OFF);
 

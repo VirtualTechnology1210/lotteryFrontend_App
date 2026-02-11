@@ -21,6 +21,7 @@ import SalesEditScreen from './screens/SalesEditScreen';
 import CustomDrawer from './components/CustomDrawer';
 import PrinterSettingsScreen from './screens/PrinterSettingsScreen';
 import { authService } from './services';
+import WinningScreen from './screens/WinningScreen';
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -31,6 +32,7 @@ const SCREEN_CONFIG = [
   { name: 'Categories', component: CategoryScreen, icon: 'shape-outline', permKey: 'categories' },
   { name: 'Products', component: ProductScreen, icon: 'package-variant-closed', permKey: 'products' },
   { name: 'Sales', component: SalesScreen, icon: 'chart-line', permKey: 'sales' },
+  { name: 'Winning', component: WinningScreen, icon: 'trophy-outline', permKey: 'winning', alwaysShow: true },
   { name: 'Reports', component: ReportsScreen, icon: 'file-chart-outline', permKey: 'reports' },
   { name: 'Users', component: UserScreen, icon: 'account-group-outline', permKey: 'users', adminOnly: true },
   { name: 'Roles & Permissions', component: RolesPermissionsScreen, icon: 'shield-account-outline', permKey: 'roles & permissions', adminOnly: true },
@@ -147,6 +149,7 @@ const App = () => {
           <Stack.Screen name="ReportResult" component={ReportResultScreen} />
           <Stack.Screen name="SaleEdit" component={SalesEditScreen} />
           <Stack.Screen name="PrinterSettings" component={PrinterSettingsScreen} />
+          <Stack.Screen name="Winning" component={WinningScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
