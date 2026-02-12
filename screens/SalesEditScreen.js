@@ -9,13 +9,18 @@ import {
     Alert,
     ActivityIndicator,
     Platform,
+    ToastAndroid,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import { salesService } from '../services/salesService';
+import { authService } from '../services';
+import PrinterService from '../printer/PrinterService';
+import { formatSalesReceipt } from '../printer/lotteryReceiptFormatter';
 
 const SalesEditScreen = ({ navigation, route }) => {
     const { saleId, saleData, isMultiple, salesItems, groupTotal } = route.params || {};
+    const [isPrinting, setIsPrinting] = useState(false);
 
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -156,6 +161,62 @@ const SalesEditScreen = ({ navigation, route }) => {
         return true;
     };
 
+    // Print receipt via Bluetooth (matches SalesScreen's print logic)
+    const handlePrintReceipt = async (items) => {
+        setIsPrinting(true);
+        try {
+            // Get username for receipt
+            const { user: userData } = await authService.getAuthData();
+            const username = userData?.name || userData?.username || 'User';
+
+            // Build cart-like items for the receipt formatter
+            const cartItems = items.map(item => ({
+                category_name: item.category_name || item.product_category || '',
+                time_slots: item.time_slots || null,
+                product_name: item.product_name || '',
+                product_code: item.product_code || '',
+                price: parseFloat(item.unit_price) || 0,
+                qty: parseInt(item.qty) || 1,
+                desc: item.desc || '',
+            }));
+
+            // Determine invoice number
+            const invoiceNo = items[0]?.invoice_number || saleData?.invoice_number || 'N/A';
+
+            // Format receipt
+            const receiptBytes = formatSalesReceipt({
+                username: username,
+                invoiceNo: invoiceNo,
+                cartItems: cartItems,
+            }, '80');
+
+            // Print using persistent connection
+            await PrinterService.printWithPersistentConnection(receiptBytes);
+
+            console.log('[Print] Edit receipt printed successfully');
+        } catch (error) {
+            console.error('[Print] Error:', error);
+            const msg = error.message || 'Failed to print receipt';
+
+            if (msg.includes('No printer configured')) {
+                Alert.alert(
+                    'No Printer',
+                    'No printer configured. Would you like to set up a printer?',
+                    [
+                        { text: 'Later', style: 'cancel' },
+                        { text: 'Setup', onPress: () => navigation.navigate('PrinterSettings') }
+                    ]
+                );
+            } else if (Platform.OS === 'android') {
+                ToastAndroid.show(`Print: ${msg}`, ToastAndroid.LONG);
+            } else {
+                console.warn('Print Error:', msg);
+            }
+        } finally {
+            setIsPrinting(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!validateForm()) return;
 
@@ -182,15 +243,40 @@ const SalesEditScreen = ({ navigation, route }) => {
                 await Promise.all(updatePromises);
             }
 
+            // Build the items data for print
+            const printItems = isMultiple
+                ? multipleItems.map(item => ({
+                    ...item,
+                    invoice_number: item.invoice_number || salesItems?.[0]?.invoice_number,
+                    category_name: item.category_name || salesItems?.[0]?.category_name,
+                    time_slots: item.time_slots || salesItems?.[0]?.time_slots,
+                }))
+                : [{
+                    ...formData,
+                    id: saleId || saleData?.id,
+                    invoice_number: saleData?.invoice_number,
+                    category_name: saleData?.category_name,
+                    time_slots: saleData?.time_slots,
+                }];
+
             // Note: Data refresh is handled automatically via useFocusEffect in ReportResultScreen
 
             Alert.alert(
-                'Success',
+                '✓ Updated',
                 isMultiple ? 'All sales updated successfully' : 'Sale updated successfully',
-                [{
-                    text: 'OK',
-                    onPress: () => navigation.goBack()
-                }]
+                [
+                    {
+                        text: 'Done',
+                        onPress: () => navigation.goBack()
+                    },
+                    {
+                        text: 'Print Receipt',
+                        onPress: () => {
+                            handlePrintReceipt(printItems);
+                            navigation.goBack();
+                        }
+                    }
+                ]
             );
         } catch (error) {
             console.error('Update sale error:', error);
@@ -319,11 +405,11 @@ const SalesEditScreen = ({ navigation, route }) => {
             <View style={styles.card}>
                 <View style={styles.cardHeader}>
                     <MaterialCommunityIcons name="note-text-outline" size={24} color="#c2410c" />
-                    <Text style={styles.cardTitle}>Additional Notes</Text>
+                    <Text style={styles.cardTitle}>Lottery Number</Text>
                 </View>
 
                 <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Description</Text>
+                    <Text style={styles.label}>Numbers</Text>
                     <TextInput
                         style={[styles.input, styles.textArea]}
                         value={formData.desc}

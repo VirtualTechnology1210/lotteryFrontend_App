@@ -154,7 +154,7 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
 
                 {item.desc && (
                     <View style={styles.descContainer}>
-                        <Text style={styles.descLabel}>Notes:</Text>
+                        <Text style={styles.descLabel}>Lottery Number:</Text>
                         <Text style={styles.descText}>{item.desc}</Text>
                     </View>
                 )}

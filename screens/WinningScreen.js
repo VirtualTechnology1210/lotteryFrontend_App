@@ -95,6 +95,57 @@ const WinningScreen = ({ navigation }) => {
         return selectedCategory.time_slots[0];
     };
 
+    /**
+     * Calculate the display-friendly time window on the frontend
+     * so users can see the range BEFORE submitting
+     */
+    const getTimeWindowPreview = () => {
+        if (!selectedCategory) return null;
+        const timeSlot = selectedCategory.time_slots?.[0];
+        if (!timeSlot) return null;
+
+        // Parse time slot string like "3:00 PM" or "10:00 AM"
+        const match12h = timeSlot.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        const match24h = timeSlot.trim().match(/^(\d{1,2}):(\d{2})$/);
+
+        let hours, minutes;
+        if (match12h) {
+            hours = parseInt(match12h[1], 10);
+            minutes = parseInt(match12h[2], 10);
+            const meridiem = match12h[3].toUpperCase();
+            if (meridiem === 'AM') {
+                if (hours === 12) hours = 0;
+            } else {
+                if (hours !== 12) hours += 12;
+            }
+        } else if (match24h) {
+            hours = parseInt(match24h[1], 10);
+            minutes = parseInt(match24h[2], 10);
+        } else {
+            return null;
+        }
+
+        const now = new Date();
+
+        // End = today at [time_slot]
+        const windowEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
+
+        // Start = yesterday at [time_slot]
+        const windowStart = new Date(windowEnd);
+        windowStart.setDate(windowStart.getDate() - 1);
+
+        return {
+            start: windowStart.toLocaleString('en-IN', {
+                day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: true
+            }),
+            end: windowEnd.toLocaleString('en-IN', {
+                day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: true
+            })
+        };
+    };
+
     const handleSubmit = async () => {
         if (!selectedCategory) {
             Alert.alert('Validation Error', 'Please select a category');
@@ -283,6 +334,21 @@ const WinningScreen = ({ navigation }) => {
                                 <Text style={styles.selectedInfoLabel}>Time Slot:</Text>
                                 <Text style={styles.selectedInfoValue}>{getTimeSlotDisplay()}</Text>
                             </View>
+                            {getTimeWindowPreview() && (
+                                <>
+                                    <View style={styles.selectedInfoDivider} />
+                                    <View style={styles.selectedInfoRow}>
+                                        <MaterialCommunityIcons name="calendar-arrow-right" size={18} color="#17996eff" />
+                                        <Text style={styles.selectedInfoLabel}>From:</Text>
+                                        <Text style={[styles.selectedInfoValue, { color: '#17996eff' }]}>{getTimeWindowPreview().start}</Text>
+                                    </View>
+                                    <View style={styles.selectedInfoRow}>
+                                        <MaterialCommunityIcons name="calendar-arrow-left" size={18} color="#181a8fff" />
+                                        <Text style={styles.selectedInfoLabel}>To:</Text>
+                                        <Text style={[styles.selectedInfoValue, { color: '#181a8fff' }]}>{getTimeWindowPreview().end}</Text>
+                                    </View>
+                                </>
+                            )}
                         </View>
                     )}
 
@@ -600,6 +666,58 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: '#1a1a1a',
+        flex: 1,
+    },
+    selectedInfoDivider: {
+        height: 1,
+        backgroundColor: '#D8DBFF',
+        marginVertical: 8,
+    },
+    // ── Time Window Info Card ─────────────────────────────────────
+    timeWindowCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        borderWidth: 1,
+        borderColor: '#E8E9F0',
+    },
+    timeWindowHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 4,
+    },
+    timeWindowTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1a1a1a',
+    },
+    timeWindowDivider: {
+        height: 1,
+        backgroundColor: '#E5E7EB',
+        marginVertical: 10,
+    },
+    timeWindowRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 6,
+        gap: 6,
+    },
+    timeWindowLabel: {
+        fontSize: 13,
+        color: '#888',
+        width: 95,
+    },
+    timeWindowValue: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#333',
         flex: 1,
     },
     input: {
