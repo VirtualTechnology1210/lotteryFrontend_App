@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Base config
 // Use 10.0.2.2 for Emulator, or your local machine IP (192.168.1.10) for Physical Device
-export const SERVER_URL = 'http://192.168.1.10:5000';
+// export const SERVER_URL = 'http://192.168.1.10:5000';
+export const SERVER_URL = 'http://103.102.234.198:5012';
 export const BASE_URL = `${SERVER_URL}/api`;
 
 // Helper to get full image URL

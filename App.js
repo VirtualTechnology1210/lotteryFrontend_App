@@ -32,7 +32,7 @@ const SCREEN_CONFIG = [
   { name: 'Categories', component: CategoryScreen, icon: 'shape-outline', permKey: 'categories' },
   { name: 'Products', component: ProductScreen, icon: 'package-variant-closed', permKey: 'products' },
   { name: 'Sales', component: SalesScreen, icon: 'chart-line', permKey: 'sales' },
-  { name: 'Winning', component: WinningScreen, icon: 'trophy-outline', permKey: 'winning', alwaysShow: true },
+  { name: 'Winning', component: WinningScreen, icon: 'trophy-outline', permKey: 'winning' },
   { name: 'Reports', component: ReportsScreen, icon: 'file-chart-outline', permKey: 'reports' },
   { name: 'Users', component: UserScreen, icon: 'account-group-outline', permKey: 'users', adminOnly: true },
   { name: 'Roles & Permissions', component: RolesPermissionsScreen, icon: 'shield-account-outline', permKey: 'roles & permissions', adminOnly: true },

@@ -90,6 +90,7 @@ const ProductScreen = ({ navigation }) => {
     const [editingProduct, setEditingProduct] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isFocus, setIsFocus] = useState(false);
+    const [isCodeAutoSynced, setIsCodeAutoSynced] = useState(true);
 
     // Load permissions on mount
     useEffect(() => {
@@ -153,6 +154,7 @@ const ProductScreen = ({ navigation }) => {
         setPrice(product.price.toString());
         setBox(product.box || 0);
         setEditingProduct(product);
+        setIsCodeAutoSynced(false);
         setShowAddModal(true);
     }, []);
 
@@ -163,6 +165,7 @@ const ProductScreen = ({ navigation }) => {
         setPrice('');
         setBox(0);
         setEditingProduct(null);
+        setIsCodeAutoSynced(true);
     };
 
     const toggleModal = () => {
@@ -329,7 +332,12 @@ const ProductScreen = ({ navigation }) => {
                                 style={styles.input}
                                 placeholder="Enter product name"
                                 value={productName}
-                                onChangeText={setProductName}
+                                onChangeText={(text) => {
+                                    setProductName(text);
+                                    if (isCodeAutoSynced) {
+                                        setProductCode(text);
+                                    }
+                                }}
                                 placeholderTextColor="#999"
                             />
                         </View>
@@ -341,7 +349,10 @@ const ProductScreen = ({ navigation }) => {
                                 style={styles.input}
                                 placeholder="Enter product code (e.g., P001)"
                                 value={productCode}
-                                onChangeText={setProductCode}
+                                onChangeText={(text) => {
+                                    setProductCode(text);
+                                    setIsCodeAutoSynced(false);
+                                }}
                                 placeholderTextColor="#999"
                                 autoCapitalize="characters"
                             />

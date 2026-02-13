@@ -46,6 +46,7 @@ const DEFAULT_ADMIN_PERMISSIONS = {
     categories: { view: true, add: true, edit: true, del: true },
     products: { view: true, add: true, edit: true, del: true },
     sales: { view: true, add: true, edit: true, del: true },
+    winning: { view: true, add: true, edit: true, del: true },
     reports: { view: true, add: true, edit: true, del: true },
     users: { view: true, add: true, edit: true, del: true },
     'roles & permissions': { view: true, add: true, edit: true, del: true }

@@ -8,11 +8,14 @@ import {
     ActivityIndicator,
     Alert,
     Platform,
-    TouchableOpacity
+    TouchableOpacity,
+    ToastAndroid
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import { reportService } from '../services/reportService';
+import PrinterService from '../printer/PrinterService';
+import { formatSalesReportReceipt } from '../printer/lotteryReceiptFormatter';
 
 // Memoized Report Item for FlatList performance
 const ReportItem = memo(({ item, formatDateTime, navigation }) => {
@@ -80,7 +83,7 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <Text style={styles.subItemTotal}>₹{parseFloat(subItem.total).toFixed(2)}</Text>
-                                    <MaterialCommunityIcons name="pencil-outline" size={14} color="#3a48c2" />
+                                    {/* <MaterialCommunityIcons name="pencil-outline" size={14} color="#3a48c2" /> */}
                                 </View>
                             </TouchableOpacity>
                         ))}
@@ -93,6 +96,12 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                         <Text style={styles.footerText}>{formatDateTime(item.created_at)}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <TouchableOpacity
+                            onPress={handleEditGroup}
+                            style={styles.editIconButton}
+                        >
+                            <MaterialCommunityIcons name="pencil-outline" size={18} color="#3a48c2" />
+                        </TouchableOpacity>
 
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <Text style={{ fontSize: 12, color: '#3a48c2', marginRight: 4 }}>
@@ -180,7 +189,9 @@ const ReportResultScreen = ({ navigation, route }) => {
     const { filters } = route.params || {};
     const [isLoading, setIsLoading] = useState(true);
     const [reportData, setReportData] = useState([]);
+    const [rawSalesData, setRawSalesData] = useState([]);
     const [summary, setSummary] = useState(null);
+    const [isPrinting, setIsPrinting] = useState(false);
 
     const fetchReport = useCallback(async () => {
         // Only show loading on initial load or empty data
@@ -195,6 +206,9 @@ const ReportResultScreen = ({ navigation, route }) => {
             if (response && response.data) {
                 const { report, summary: apiSummary } = response.data;
                 const sales = report || [];
+
+                // Store raw flat sales data for printing
+                setRawSalesData(sales);
 
                 // Group transactions by invoice number
                 const groupTransactions = (transactions) => {
@@ -264,6 +278,63 @@ const ReportResultScreen = ({ navigation, route }) => {
         }, [fetchReport])
     );
 
+    // Process the actual printing
+    const processPrintReport = async () => {
+        setIsPrinting(true);
+        try {
+            const receiptBytes = formatSalesReportReceipt({
+                fromDate: filters?.start_date || null,
+                toDate: filters?.end_date || null,
+                salesItems: rawSalesData,
+                summary: summary,
+            }, '80');
+
+            await PrinterService.printWithPersistentConnection(receiptBytes);
+
+            if (Platform.OS === 'android') {
+                ToastAndroid.show('Report printed successfully!', ToastAndroid.SHORT);
+            }
+        } catch (error) {
+            console.error('[Print Report] Error:', error);
+            const msg = error.message || 'Failed to print report';
+
+            if (msg.includes('No printer configured')) {
+                Alert.alert(
+                    'No Printer',
+                    'No printer configured. Would you like to set up a printer?',
+                    [
+                        { text: 'Later', style: 'cancel' },
+                        { text: 'Setup', onPress: () => navigation.navigate('PrinterSettings') }
+                    ]
+                );
+            } else if (Platform.OS === 'android') {
+                ToastAndroid.show(`Print: ${msg}`, ToastAndroid.LONG);
+            }
+        } finally {
+            setIsPrinting(false);
+        }
+    };
+
+    // Print the full sales report with confirmation
+    const handlePrintReport = () => {
+        if (rawSalesData.length === 0) {
+            Alert.alert('No Data', 'No sales data to print.');
+            return;
+        }
+
+        Alert.alert(
+            'Print Report',
+            `Are you sure you want to print the full report?\n(${rawSalesData.length} items)`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Print',
+                    onPress: processPrintReport
+                }
+            ]
+        );
+    };
+
     const formatDateTime = (dateString) => {
         const date = new Date(dateString);
         return date.toLocaleDateString('en-IN', {
@@ -328,7 +399,17 @@ const ReportResultScreen = ({ navigation, route }) => {
                         <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Sales Report Result</Text>
-                    <View style={styles.addButtonPlaceholder} />
+                    <TouchableOpacity
+                        onPress={handlePrintReport}
+                        style={styles.printButton}
+                        disabled={isPrinting || isLoading || rawSalesData.length === 0}
+                    >
+                        {isPrinting ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <MaterialCommunityIcons name="printer" size={22} color="#fff" />
+                        )}
+                    </TouchableOpacity>
                 </View>
             </LinearGradient>
 
@@ -419,6 +500,17 @@ const styles = StyleSheet.create({
     addButtonPlaceholder: {
         width: 44,
         height: 44,
+    },
+    printButton: {
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        padding: 10,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        width: 44,
+        height: 44,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     loadingContainer: {
         flex: 1,

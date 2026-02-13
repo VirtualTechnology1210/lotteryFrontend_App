@@ -554,9 +554,9 @@ const SalesEditScreen = ({ navigation, route }) => {
                     <Text style={styles.headerTitle}>
                         {isMultiple ? `Edit ${multipleItems.length} Items` : 'Edit Sale'}
                     </Text>
-                    <TouchableOpacity onPress={handleDelete} style={styles.deleteButton}>
+                    {/* <TouchableOpacity onPress={handleDelete} style={styles.deleteButton}>
                         <MaterialCommunityIcons name="delete-outline" size={24} color="#fff" />
-                    </TouchableOpacity>
+                    </TouchableOpacity> */}
                 </View>
             </LinearGradient>
 

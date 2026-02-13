@@ -46,6 +46,7 @@ const CMD = {
     SIZE_NORMAL: [GS, 0x21, 0x00],
     SIZE_DOUBLE_HEIGHT: [GS, 0x21, 0x01],
     SIZE_DOUBLE_BOTH: [GS, 0x21, 0x11],
+    SET_CHAR_SPACING: (n) => [ESC, 0x20, n],
     LF: [0x0a],
     FEED_5: [ESC, 0x64, 0x05],
     CUT: [GS, 0x56, 0x01],
@@ -83,6 +84,44 @@ const formatTime = (date) => {
         const d = new Date(date);
         return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     } catch (e) { return str(date); }
+};
+
+// Number to Indian words
+const numberToIndianWords = (num) => {
+    if (!num || num === 0) return 'Zero';
+    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+        'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    const convert = (n) => {
+        if (n < 20) return ones[n];
+        if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
+        if (n < 1000) return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + convert(n % 100) : '');
+        if (n < 100000) return convert(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + convert(n % 1000) : '');
+        if (n < 10000000) return convert(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + convert(n % 100000) : '');
+        return convert(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + convert(n % 10000000) : '');
+    };
+    return convert(Math.floor(Math.abs(num)));
+};
+
+// Convert to title case
+const toTitleCase = (s) => str(s).replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+
+// Amount to words with currency
+const numberToWordsWithDecimal = (amount, currency = 'INR') => {
+    if (!amount || isNaN(amount)) return '';
+    const [whole, decimal] = Math.abs(amount).toFixed(2).split('.');
+    let result = '';
+    if (whole && parseInt(whole) > 0) {
+        result += toTitleCase(numberToIndianWords(parseInt(whole)));
+        result += currency === 'INR' ? ' Rupees' : ' Dirhams';
+    }
+    if (decimal && parseInt(decimal) > 0) {
+        result += ' And ';
+        result += toTitleCase(numberToIndianWords(parseInt(decimal)));
+        result += currency === 'INR' ? ' Paise' : ' Fils';
+    }
+    return result;
 };
 
 // Wrap text to fit width
@@ -151,7 +190,8 @@ const getDescLines = (descText, maxPairs = 2) => {
  */
 export const formatLotteryReceipt = (receiptData, width = '80') => {
     try {
-        const W = width === '58' ? 32 : 48; // Characters per line
+        // With 1-dot char spacing increase, we reduce total characters per line slightly
+        const W = width === '58' ? 29 : 44;
         const items = Array.isArray(receiptData?.items) ? receiptData.items : [];
 
         // Build receipt
@@ -162,47 +202,64 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
 
         // Initialize printer
         cmd(CMD.INIT);
+        // Set small character spacing as requested
+        cmd(CMD.SET_CHAR_SPACING(1));
+
+        // ============INVOICE============
+        cmd(CMD.ALIGN_CENTER);
+        cmd(CMD.BOLD_ON);
+        ln('============ D K ============');
+        cmd(CMD.BOLD_OFF);
 
         // ==================== USER INFO ====================
         cmd(CMD.ALIGN_LEFT);
-        ln(`User: ${str(receiptData.username)}`);
+        // User line
+        cmd(CMD.BOLD_ON); txt('User: '); cmd(CMD.BOLD_OFF); ln(str(receiptData.username));
 
         // Invoice number and Time/Date in ONE LINE
-        // Invoice No: 1       Time:10:30AM - 09/02/2026
-        const invoiceText = `Bill No: ${str(receiptData.invoiceNo)}`;
-        const timeDateText = `Time:${formatTime(receiptData.billTime)} - ${formatDate(receiptData.date)}`;
-        const labelSpacing = Math.max(1, W - invoiceText.length - timeDateText.length);
-        ln(invoiceText + ' '.repeat(labelSpacing) + timeDateText);
+        const blNoKey = 'Bill No: ';
+        const blNoVal = str(receiptData.invoiceNo);
+        const stKey = 'Time:';
+        const stVal = `${formatTime(receiptData.billTime)} - ${formatDate(receiptData.date)}`;
+
+        const totalTextLen = blNoKey.length + blNoVal.length + stKey.length + stVal.length;
+        const lineSpacing = Math.max(1, W - totalTextLen);
+
+        cmd(CMD.BOLD_ON); txt(blNoKey); cmd(CMD.BOLD_OFF); txt(blNoVal);
+        txt(' '.repeat(lineSpacing));
+        cmd(CMD.BOLD_ON); txt(stKey); cmd(CMD.BOLD_OFF); ln(stVal);
 
         // Time Slot
         if (receiptData.timeSlot) {
-            ln(`Time: ${str(receiptData.timeSlot)}`);
+            cmd(CMD.BOLD_ON); txt('Show Time: '); cmd(CMD.BOLD_OFF); ln(str(receiptData.timeSlot));
         }
 
         // Category
         if (receiptData.categoryName) {
-            ln(`Category: ${str(receiptData.categoryName)}`);
+            cmd(CMD.BOLD_ON); txt('Category: '); cmd(CMD.BOLD_OFF); ln(str(receiptData.categoryName));
         }
 
         // ==================== ITEMS TABLE ====================
         cmd(CMD.ALIGN_LEFT);
-        ln('.'.repeat(W));
+        ln('-'.repeat(W));
 
         // Table Header
         // 80mm: No.(4) | Details(12) | Number(12) | Qty(4) | Rate(7) | Amount(9) total 48
         // 58mm: No.(2) | Details(6) | Number(11) | Qty(3) | Rate(4) | Amount(6) total 32
 
         cmd(CMD.BOLD_ON);
-        if (W >= 48) {
-            const header = 'No.'.padEnd(4) + 'Details'.padEnd(12) + 'Number'.padStart(12) + 'Qty'.padStart(4) + 'Rate'.padStart(7) + 'Amount'.padStart(9);
+        if (W >= 44) {
+            // 80mm (W=44): No(3) + Details(11) + Number(11) + Qty(4) + Rate(7) + Amount(8) = 44
+            const header = 'No.'.padEnd(3) + 'Details'.padEnd(11) + 'Number'.padStart(11) + 'Qty'.padStart(4) + 'Rate'.padStart(7) + 'Amount'.padStart(8);
             ln(header);
         } else {
-            const header = 'No.'.padEnd(2) + 'Details'.padEnd(6) + 'Number'.padStart(11) + 'Qty'.padStart(3) + 'Rate'.padStart(4) + 'Amount'.padStart(6);
+            // 58mm (W=29): No(2) + Details(5) + Number(9) + Qty(3) + Rate(4) + Amount(6) = 29
+            const header = 'No.'.padEnd(2) + 'Details'.padEnd(5) + 'Number'.padStart(9) + 'Qty'.padStart(3) + 'Rate'.padStart(4) + 'Amount'.padStart(6);
             ln(header);
         }
 
         cmd(CMD.BOLD_OFF);
-        ln('.'.repeat(W));
+        ln('-'.repeat(W));
 
         // Item rows
         let totalQty = 0;
@@ -220,17 +277,17 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
             totalQty += qty;
             totalPrice += lineTotal;
 
-            if (W >= 48) {
-                // 80mm paper layout: 4 | 12 | 12 | 4 | 7 | 9 = 48
-                const maxNameW = 12;
-                const maxDescW = 12;
+            if (W >= 44) {
+                // 80mm paper layout: 3 | 11 | 11 | 4 | 7 | 8 = 44
+                const maxNameW = 11;
+                const maxDescW = 11;
                 const nameLines = wrapText(productName, maxNameW);
                 const descLines = getDescLines(desc);
                 const maxSubLines = Math.max(nameLines.length, descLines.length);
 
                 const qtyStr = String(qty).padStart(4);
                 const rateStr = price.toFixed(2).padStart(7);
-                const amountStr = lineTotal.toFixed(2).padStart(9);
+                const amountStr = lineTotal.toFixed(2).padStart(8);
 
                 for (let i = 0; i < maxSubLines; i++) {
                     const rowNo = i === 0 ? no : ' '.repeat(noWidth);
@@ -244,9 +301,9 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
                     }
                 }
             } else {
-                // 58mm paper layout: 2 | 6 | 11 | 3 | 4 | 6 = 32
-                const maxNameW = 6;
-                const maxDescW = 11;
+                // 58mm paper layout: 2 | 5 | 9 | 3 | 4 | 6 = 29
+                const maxNameW = 5;
+                const maxDescW = 9;
                 const nameLines = wrapText(productName, maxNameW);
                 const descLines = getDescLines(desc);
                 const maxSubLines = Math.max(nameLines.length, descLines.length);
@@ -270,17 +327,17 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
         });
 
         // ==================== TOTALS SECTION ====================
-        ln('.'.repeat(W));
-        cmd(CMD.BOLD_ON);
+        ln('-'.repeat(W));
 
         // Total row in table format
-        if (W >= 48) {
-            const label = 'Total'.padEnd(28); // No(4)+Details(12)+Number(12)
+        cmd(CMD.BOLD_ON);
+        if (W >= 44) {
+            const label = 'Total'.padEnd(25); // No(3)+Details(11)+Number(11)
             const qtyStr = String(totalQty).padStart(4);
-            const amtStr = totalPrice.toFixed(2).padStart(9);
+            const amtStr = totalPrice.toFixed(2).padStart(8);
             ln(label + qtyStr + ' '.repeat(7) + amtStr);
         } else {
-            const label = 'Total'.padEnd(19); // No(2)+Details(6)+Number(11)
+            const label = 'Total'.padEnd(16); // No(2)+Details(5)+Number(9)
             const qtyStr = String(totalQty).padStart(3);
             const amtStr = totalPrice.toFixed(2).padStart(6);
             ln(label + qtyStr + ' '.repeat(4) + amtStr);
@@ -288,9 +345,11 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
         cmd(CMD.BOLD_OFF);
 
         // ==================== FOOTER ====================
-        ln('.'.repeat(W));
+        ln('-'.repeat(W));
         cmd(CMD.ALIGN_CENTER);
-        ln('Thank you - Visit Again');
+        cmd(CMD.BOLD_ON);
+        ln('** THANK YOU. VISIT AGAIN **');
+        cmd(CMD.BOLD_OFF);
 
         // Feed and cut
         cmd(CMD.LF);
@@ -388,6 +447,276 @@ export const formatSalesReceipt = (data, width = '80') => {
     }, width);
 };
 
+/**
+ * Format sales report for thermal printer (date-filtered report)
+ * 
+ * Layout:
+ * ========== D K ==========
+ *        Sales Report
+ * From Date: DD/MM/YYYY    To Date: DD/MM/YYYY
+ * ------------------------------------------
+ * No  Details     Number  Qty  Rate   Amount
+ * ------------------------------------------
+ *     Invoice No: 1
+ * 1.  Kl-10       2134     1   10.00   10.00
+ * 2.  Kl-30       1134     1   30.00   30.00
+ *     Invoice No: 2
+ * 1.  Tl-10       2534     1   10.00   10.00
+ * ------------------------------------------
+ * Total                                80.00
+ * ------------------------------------------
+ *          ** Thank You **
+ * 
+ * @param {Object} reportData - Report data
+ * @param {string} reportData.fromDate - Start date string
+ * @param {string} reportData.toDate - End date string
+ * @param {Array} reportData.salesItems - Array of sale items (from API)
+ * @param {Object} reportData.summary - Summary with total_quantity, total_amount
+ * @param {string} width - Paper width '80' or '58'
+ * @returns {Uint8Array} ESC/POS bytes
+ */
+export const formatSalesReportReceipt = (reportData, width = '80') => {
+    try {
+        const W = width === '58' ? 29 : 44;
+        const salesItems = Array.isArray(reportData?.salesItems) ? reportData.salesItems : [];
+
+        const parts = [];
+        const cmd = (c) => parts.push(new Uint8Array(c));
+        const txt = (s) => parts.push(toBytes(s));
+        const ln = (s) => { txt(s); cmd(CMD.LF); };
+
+        // Initialize printer
+        cmd(CMD.INIT);
+        cmd(CMD.SET_CHAR_SPACING(1));
+
+        // ============ HEADER ============
+        cmd(CMD.ALIGN_CENTER);
+        cmd(CMD.BOLD_ON);
+        ln('========== D K ==========');
+        cmd(CMD.BOLD_OFF);
+
+        cmd(CMD.LF);
+        cmd(CMD.BOLD_ON);
+        ln('Sales Report');
+        cmd(CMD.BOLD_OFF);
+        cmd(CMD.LF);
+
+        // ============ DATE RANGE ============
+        cmd(CMD.ALIGN_LEFT);
+        const fromLabel = 'From: ';
+        const fromVal = reportData.fromDate ? formatDate(reportData.fromDate) : '--';
+        const toLabel = '  To: ';
+        const toVal = reportData.toDate ? formatDate(reportData.toDate) : '--';
+
+        const dateLineLen = fromLabel.length + fromVal.length + toLabel.length + toVal.length;
+        const dateSpacing = Math.max(1, W - dateLineLen);
+
+        cmd(CMD.BOLD_ON); txt(fromLabel); cmd(CMD.BOLD_OFF); txt(fromVal);
+        txt(' '.repeat(dateSpacing));
+        cmd(CMD.BOLD_ON); txt(toLabel); cmd(CMD.BOLD_OFF); ln(toVal);
+
+        cmd(CMD.LF);
+
+        // ============ TABLE HEADER ============
+        ln('-'.repeat(W));
+
+        cmd(CMD.BOLD_ON);
+        if (W >= 44) {
+            // 80mm: No(3) + Details(11) + Number(11) + Qty(4) + Rate(7) + Amount(8) = 44
+            const header = 'No.'.padEnd(3) + 'Details'.padEnd(11) + 'Number'.padStart(11) + 'Qty'.padStart(4) + 'Rate'.padStart(7) + 'Amount'.padStart(8);
+            ln(header);
+        } else {
+            // 58mm: No(2) + Details(5) + Number(9) + Qty(3) + Rate(4) + Amount(6) = 29
+            const header = 'No'.padEnd(2) + 'Detl'.padEnd(5) + 'Number'.padStart(9) + 'Qty'.padStart(3) + 'Rate'.padStart(4) + 'Amt'.padStart(6);
+            ln(header);
+        }
+        cmd(CMD.BOLD_OFF);
+        ln('-'.repeat(W));
+
+        // ============ GROUP BY INVOICE ============
+        // Group items by invoice_number
+        const invoiceGroups = {};
+        const noInvoiceItems = [];
+
+        salesItems.forEach(item => {
+            if (item.invoice_number) {
+                if (!invoiceGroups[item.invoice_number]) {
+                    invoiceGroups[item.invoice_number] = [];
+                }
+                invoiceGroups[item.invoice_number].push(item);
+            } else {
+                noInvoiceItems.push(item);
+            }
+        });
+
+        let grandTotalQty = 0;
+        let grandTotalAmount = 0;
+
+        // Print each invoice group
+        const invoiceNumbers = Object.keys(invoiceGroups).sort((a, b) => Number(a) - Number(b));
+
+        invoiceNumbers.forEach(invoiceNo => {
+            const items = invoiceGroups[invoiceNo];
+
+            // Invoice header line
+            cmd(CMD.BOLD_ON);
+            if (W >= 44) {
+                ln('   Invoice No: ' + invoiceNo);
+            } else {
+                ln(' Inv: ' + invoiceNo);
+            }
+            cmd(CMD.BOLD_OFF);
+
+            // Print items within this invoice
+            items.forEach((item, index) => {
+                const productName = str(item.product_name || item.product_code || '');
+                const descNum = str(item.desc || '-');
+                const qty = Number(item.qty) || 0;
+                const rate = Number(item.unit_price) || 0;
+                const amount = Number(item.total) || (qty * rate);
+
+                grandTotalQty += qty;
+                grandTotalAmount += amount;
+
+                if (W >= 44) {
+                    // 80mm layout: No(3) + Details(11) + Number(11) + Qty(4) + Rate(7) + Amount(8) = 44
+                    const no = `${index + 1}.`.padEnd(3);
+                    const nameLines = wrapText(productName, 11);
+                    const descLines = getDescLines(descNum);
+                    const maxSubLines = Math.max(nameLines.length, descLines.length);
+
+                    const qtyStr = String(qty).padStart(4);
+                    const rateStr = rate.toFixed(2).padStart(7);
+                    const amountStr = amount.toFixed(2).padStart(8);
+
+                    for (let i = 0; i < maxSubLines; i++) {
+                        const rowNo = i === 0 ? no : '   ';
+                        const rowName = (nameLines[i] || '').padEnd(11);
+                        const rowDesc = (descLines[i] || '').padStart(11);
+
+                        if (i === 0) {
+                            ln(rowNo + rowName + rowDesc + qtyStr + rateStr + amountStr);
+                        } else {
+                            ln(rowNo + rowName + rowDesc);
+                        }
+                    }
+                } else {
+                    // 58mm layout: No(2) + Details(5) + Number(9) + Qty(3) + Rate(4) + Amount(6) = 29
+                    const no = `${index + 1}.`.padEnd(2);
+                    const nameLines = wrapText(productName, 5);
+                    const descLines = getDescLines(descNum);
+                    const maxSubLines = Math.max(nameLines.length, descLines.length);
+
+                    const qtyStr = String(qty).padStart(3);
+                    const rateStr = rate.toFixed(0).padStart(4);
+                    const amountStr = amount.toFixed(2).padStart(6);
+
+                    for (let i = 0; i < maxSubLines; i++) {
+                        const rowNo = i === 0 ? no : '  ';
+                        const rowName = (nameLines[i] || '').padEnd(5);
+                        const rowDesc = (descLines[i] || '').padStart(9);
+
+                        if (i === 0) {
+                            ln(rowNo + rowName + rowDesc + qtyStr + rateStr + amountStr);
+                        } else {
+                            ln(rowNo + rowName + rowDesc);
+                        }
+                    }
+                }
+            });
+        });
+
+        // Print items without invoice number (if any)
+        if (noInvoiceItems.length > 0) {
+            cmd(CMD.BOLD_ON);
+            if (W >= 44) {
+                ln('   Other Sales');
+            } else {
+                ln(' Other');
+            }
+            cmd(CMD.BOLD_OFF);
+
+            noInvoiceItems.forEach((item, index) => {
+                const productName = str(item.product_name || item.product_code || '');
+                const descNum = str(item.desc || '-');
+                const qty = Number(item.qty) || 0;
+                const rate = Number(item.unit_price) || 0;
+                const amount = Number(item.total) || (qty * rate);
+
+                grandTotalQty += qty;
+                grandTotalAmount += amount;
+
+                if (W >= 44) {
+                    const no = `${index + 1}.`.padEnd(3);
+                    const nameTrunc = productName.substring(0, 11).padEnd(11);
+                    const descTrunc = descNum.substring(0, 11).padStart(11);
+                    const qtyStr = String(qty).padStart(4);
+                    const rateStr = rate.toFixed(2).padStart(7);
+                    const amountStr = amount.toFixed(2).padStart(8);
+                    ln(no + nameTrunc + descTrunc + qtyStr + rateStr + amountStr);
+                } else {
+                    const no = `${index + 1}.`.padEnd(2);
+                    const nameTrunc = productName.substring(0, 5).padEnd(5);
+                    const descTrunc = descNum.substring(0, 9).padStart(9);
+                    const qtyStr = String(qty).padStart(3);
+                    const rateStr = rate.toFixed(0).padStart(4);
+                    const amountStr = amount.toFixed(2).padStart(6);
+                    ln(no + nameTrunc + descTrunc + qtyStr + rateStr + amountStr);
+                }
+            });
+        }
+
+        // ============ TOTALS ============
+        ln('-'.repeat(W));
+
+        // Use summary if provided, otherwise use calculated totals
+        const totalQty = reportData.summary?.total_quantity || grandTotalQty;
+        const totalAmount = reportData.summary?.total_amount || grandTotalAmount;
+
+        cmd(CMD.BOLD_ON);
+        if (W >= 44) {
+            const label = 'Total'.padEnd(25); // No(3)+Details(11)+Number(11)
+            const qtyStr = String(totalQty).padStart(4);
+            const amtStr = totalAmount.toFixed(2).padStart(8);
+            ln(label + qtyStr + ' '.repeat(7) + amtStr);
+        } else {
+            const label = 'Total'.padEnd(16); // No(2)+Details(5)+Number(9)
+            const qtyStr = String(totalQty).padStart(3);
+            const amtStr = totalAmount.toFixed(2).padStart(6);
+            ln(label + qtyStr + ' '.repeat(4) + amtStr);
+        }
+        cmd(CMD.BOLD_OFF);
+
+        // ============ FOOTER ============
+        ln('-'.repeat(W));
+        cmd(CMD.ALIGN_CENTER);
+        cmd(CMD.BOLD_ON);
+        ln('** Thank You **');
+        cmd(CMD.BOLD_OFF);
+
+        // Feed and cut
+        cmd(CMD.LF);
+        cmd(CMD.LF);
+        cmd(CMD.LF);
+        cmd(CMD.CUT);
+
+        // Combine all parts
+        const totalLength = parts.reduce((sum, p) => sum + p.length, 0);
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        parts.forEach(p => { result.set(p, offset); offset += p.length; });
+
+        console.log('[salesReportFormatter] Generated', result.length, 'bytes');
+        return result;
+
+    } catch (error) {
+        console.error('[salesReportFormatter] Error:', error);
+        const msg = 'PRINT ERROR';
+        const err = [...CMD.INIT, ...CMD.ALIGN_CENTER, ...Array.from(msg).map(c => c.charCodeAt(0)), ...CMD.LF, ...CMD.CUT];
+        return new Uint8Array(err);
+    }
+};
+
 export const bytesToHex = (bytes, limit = 200) => {
     return Array.from(bytes.slice(0, limit)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
 };
@@ -395,5 +724,6 @@ export const bytesToHex = (bytes, limit = 200) => {
 export default {
     formatLotteryReceipt,
     formatSalesReceipt,
+    formatSalesReportReceipt,
     bytesToHex,
 };

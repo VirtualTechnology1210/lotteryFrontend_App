@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo, useEffect } from 'react';
+import React, { useState, useCallback, memo, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -93,9 +93,17 @@ const CategoryCard = memo(({ category, index, isSelected, onPress }) => {
                     />
                 </View>
             )}
-            <Text style={styles.categoryName} numberOfLines={2}>
+            <Text style={styles.categoryName} numberOfLines={1}>
                 {category.category_name}
             </Text>
+            {category.time_slots && category.time_slots.length > 0 && (
+                <View style={styles.categoryTimeContainer}>
+                    <MaterialCommunityIcons name="clock-outline" size={10} color="#666" />
+                    <Text style={styles.categoryTimeText} numberOfLines={1}>
+                        {category.time_slots[0]}
+                    </Text>
+                </View>
+            )}
             {isSelected && (
                 <View style={styles.selectedBadge}>
                     <MaterialCommunityIcons name="check" size={14} color="#fff" />
@@ -139,7 +147,6 @@ const CartItem = memo(({ item, index, onUpdateQty, onRemove }) => {
     return (
         <View style={styles.cartItem}>
             <View style={styles.cartItemInfo}>
-                <Text style={styles.cartItemCategory}>{item.category_name}</Text>
                 <Text style={styles.cartItemName} numberOfLines={1}>{item.product_name}</Text>
                 <Text style={styles.cartItemPrice}>₹{item.price} × {item.qty}</Text>
             </View>
@@ -171,6 +178,88 @@ const CartItem = memo(({ item, index, onUpdateQty, onRemove }) => {
     );
 });
 
+/**
+ * Parse a time slot string (e.g. "1:00 PM", "10:30 AM", "15:00")
+ * into total minutes from midnight.
+ * Returns null if format is invalid.
+ */
+const parseTimeSlotToMinutes = (timeSlot) => {
+    if (!timeSlot || typeof timeSlot !== 'string') return null;
+    const trimmed = timeSlot.trim();
+
+    // 12-hour format: "1:00 PM", "10:30 AM"
+    const match12h = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (match12h) {
+        let hours = parseInt(match12h[1], 10);
+        const minutes = parseInt(match12h[2], 10);
+        const meridiem = match12h[3].toUpperCase();
+        if (meridiem === 'AM') {
+            if (hours === 12) hours = 0;
+        } else {
+            if (hours !== 12) hours += 12;
+        }
+        if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+            return hours * 60 + minutes;
+        }
+        return null;
+    }
+
+    // 24-hour format: "15:00", "09:30"
+    const match24h = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+    if (match24h) {
+        const hours = parseInt(match24h[1], 10);
+        const minutes = parseInt(match24h[2], 10);
+        if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+            return hours * 60 + minutes;
+        }
+    }
+    return null;
+};
+
+/**
+ * Check if a category should be visible based on its first time slot.
+ *
+ * Rule:
+ *   Hidden from (timeSlot − 2 minutes) until next day 12:01 AM.
+ *   Visible from 12:01 AM until (timeSlot − 2 minutes).
+ *
+ * Example (timeSlot = 1:00 PM = 780 min):
+ *   hideStart = 778 min (12:58 PM)
+ *   Hidden:  12:58 PM  →  11:59 PM  (same day)
+ *            12:00 AM  →  12:00 AM  (next day, 1 minute window)
+ *   Visible: 12:01 AM  →  12:57 PM
+ */
+const isCategoryVisible = (category) => {
+    if (!category.time_slots || category.time_slots.length === 0) return true;
+
+    const slotMinutes = parseTimeSlotToMinutes(category.time_slots[0]);
+    if (slotMinutes === null) return true; // can't parse → keep visible
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    // Hide starts 2 minutes before the slot
+    let hideStart = slotMinutes - 2;
+
+    if (hideStart < 0) {
+        // Slot is at 00:00 or 00:01 — hideStart wraps to previous day
+        hideStart += 24 * 60; // e.g. -2 → 1438 (23:58)
+    }
+
+    // hideEnd = 12:01 AM = minute 1 of the day
+    const hideEnd = 1; // 00:01
+
+    // The hidden window crosses midnight:
+    //   hideStart (e.g. 778) → 1439 (end of day) AND 0 → hideEnd (1)
+    // So category is HIDDEN when:
+    //   currentMinutes >= hideStart  OR  currentMinutes < hideEnd
+    if (currentMinutes >= hideStart || currentMinutes < hideEnd) {
+        return false; // hidden
+    }
+
+    return true; // visible
+};
+
 const SalesScreen = ({ navigation }) => {
     const [categories, setCategories] = useState([]);
     const [products, setProducts] = useState([]);
@@ -178,6 +267,9 @@ const SalesScreen = ({ navigation }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingProducts, setIsLoadingProducts] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+
+    // Tick state — incremented every 30s to force re-evaluation of category visibility
+    const [visibilityTick, setVisibilityTick] = useState(0);
 
     // Permission state
     const [permissions, setPermissions] = useState({
@@ -206,8 +298,17 @@ const SalesScreen = ({ navigation }) => {
     const [showAllCategories, setShowAllCategories] = useState(false);
     const [nextInvoiceNumber, setNextInvoiceNumber] = useState(null);
 
-    // Categories to display based on expansion state
-    const displayedCategories = showAllCategories ? categories : categories.slice(0, 6);
+    // Timer to re-check category visibility every 30 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setVisibilityTick(t => t + 1);
+        }, 30000); // 30 seconds
+        return () => clearInterval(interval);
+    }, []);
+
+    // Filter categories by time-slot visibility, then apply expansion limit
+    const visibleCategories = categories.filter(isCategoryVisible);
+    const displayedCategories = showAllCategories ? visibleCategories : visibleCategories.slice(0, 6);
 
     // Calculate total
     const grandTotal = cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
@@ -583,13 +684,13 @@ const SalesScreen = ({ navigation }) => {
                             </View>
 
                             {/* Show More / Show Less Button */}
-                            {categories.length > 6 && (
+                            {visibleCategories.length > 6 && (
                                 <TouchableOpacity
                                     style={styles.showMoreButton}
                                     onPress={() => setShowAllCategories(!showAllCategories)}
                                 >
                                     <Text style={styles.showMoreText}>
-                                        {showAllCategories ? 'Show Less' : `Show All (${categories.length})`}
+                                        {showAllCategories ? 'Show Less' : `Show All (${visibleCategories.length})`}
                                     </Text>
                                     <MaterialCommunityIcons
                                         name={showAllCategories ? 'chevron-up' : 'chevron-down'}
@@ -599,10 +700,10 @@ const SalesScreen = ({ navigation }) => {
                                 </TouchableOpacity>
                             )}
 
-                            {categories.length === 0 && (
+                            {visibleCategories.length === 0 && (
                                 <View style={styles.emptyState}>
                                     <MaterialCommunityIcons name="shape-outline" size={50} color="#ddd" />
-                                    <Text style={styles.emptyText}>No categories available</Text>
+                                    <Text style={styles.emptyText}>{categories.length > 0 ? 'All categories are currently closed' : 'No categories available'}</Text>
                                 </View>
                             )}
                         </View>
@@ -1098,9 +1199,26 @@ const styles = StyleSheet.create({
     },
     categoryName: {
         fontSize: 12,
-        fontWeight: '600',
-        color: '#333',
+        fontWeight: '700',
+        color: '#1a1a1a',
         textAlign: 'center',
+        paddingHorizontal: 4,
+        marginBottom: 2,
+    },
+    categoryTimeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 3,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        backgroundColor: '#F5F7FA',
+        borderRadius: 8,
+    },
+    categoryTimeText: {
+        fontSize: 10,
+        color: '#666',
+        fontWeight: '500',
     },
     selectedBadge: {
         position: 'absolute',
@@ -1189,7 +1307,26 @@ const styles = StyleSheet.create({
         color: '#3a48c2',
         fontWeight: '600',
         textTransform: 'uppercase',
+    },
+    cartItemCategoryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
         marginBottom: 2,
+    },
+    cartItemTimeChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#EEF0FF',
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        borderRadius: 6,
+        gap: 3,
+    },
+    cartItemTimeText: {
+        fontSize: 9,
+        color: '#3a48c2',
+        fontWeight: '700',
     },
     cartItemName: {
         fontSize: 14,

@@ -201,45 +201,84 @@ const WinningScreen = ({ navigation }) => {
         });
     };
 
-    const renderSaleItem = ({ item, index }) => (
-        <View style={styles.saleItem}>
-            <View style={styles.saleItemHeader}>
-                <View style={styles.saleIndexBadge}>
-                    <Text style={styles.saleIndexText}>{index + 1}</Text>
-                </View>
-                <Text style={styles.saleInvoice}>
-                    Invoice Number : {item.invoice_number}
-                </Text>
-                {item.box === 1 && (
-                    <View style={styles.boxBadge}>
-                        <Text style={styles.boxBadgeText}>BOX</Text>
+    /**
+     * Get the matching suffix info for display.
+     * For a winning number like 8321:
+     *   Round 4 (Exact): full number "8321"
+     *   Round 3 (Last 3): suffix "321"
+     *   Round 2 (Last 2): suffix "21"
+     *   Round 1 (Last 1): suffix "1"
+     */
+    const getMatchInfo = (matchRound) => {
+        if (!results) return { label: '', suffix: '', color: '#666' };
+        const num = results.lottery_number;
+        switch (matchRound) {
+            case 4: return { label: 'Exact Match', suffix: num, color: '#92400E' };
+            case 3: return { label: 'Last 3 Digits', suffix: num.slice(-3), color: '#065F46' };
+            case 2: return { label: 'Last 2 Digits', suffix: num.slice(-2), color: '#374151' };
+            case 1: return { label: 'Last Digit', suffix: num.slice(-1), color: '#991B1B' };
+            default: return { label: '', suffix: '', color: '#666' };
+        }
+    };
+
+    const renderSaleItem = ({ item, index }) => {
+        const matchInfo = getMatchInfo(item.match_round);
+        const lotteryNum = item.lottery_number || '';
+        const suffix = matchInfo.suffix;
+
+        // Split the lottery number into non-matching prefix + matching suffix
+        const prefixLength = lotteryNum.length - suffix.length;
+        const prefix = lotteryNum.slice(0, prefixLength);
+        const matchedPart = lotteryNum.slice(prefixLength);
+
+        return (
+            <View style={styles.saleItem}>
+                <View style={styles.saleItemHeader}>
+                    <View style={styles.saleIndexBadge}>
+                        <Text style={styles.saleIndexText}>{index + 1}</Text>
                     </View>
-                )}
+                    <Text style={styles.saleInvoice}>
+                        Invoice Number : {item.invoice_number}
+                    </Text>
+                    {item.box === 1 && (
+                        <View style={styles.boxBadge}>
+                            <Text style={styles.boxBadgeText}>BOX</Text>
+                        </View>
+                    )}
+                </View>
+                <View style={styles.saleItemBody}>
+                    <View style={styles.saleDetailRow}>
+                        <MaterialCommunityIcons name="package-variant" size={16} color="#666" />
+                        <Text style={styles.saleDetailLabel}>Product:</Text>
+                        <Text style={styles.saleDetailValue}>{item.product_name || '-'}</Text>
+                    </View>
+                    <View style={styles.saleDetailRow}>
+                        <MaterialCommunityIcons name="ticket-outline" size={16} color="#666" />
+                        <Text style={styles.saleDetailLabel}>Number:</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                            <Text style={{ fontSize: 15, color: '#888', fontWeight: '500' }}>{prefix}</Text>
+                            <Text style={{ fontSize: 15, color: matchInfo.color, fontWeight: '800' }}>{matchedPart}</Text>
+                        </View>
+                    </View>
+                    <View style={styles.saleDetailRow}>
+                        <MaterialCommunityIcons name="counter" size={16} color="#666" />
+                        <Text style={styles.saleDetailLabel}>Qty:</Text>
+                        <Text style={styles.saleDetailValue}>{item.qty}</Text>
+                    </View>
+                    <View style={styles.saleDetailRow}>
+                        <MaterialCommunityIcons name="calendar-clock" size={16} color="#666" />
+                        <Text style={styles.saleDetailLabel}>Date & Time:</Text>
+                        <Text style={styles.saleDetailValue}>{formatDateTime(item.sold_at || item.createdAt || item.created_at)}</Text>
+                    </View>
+                    <View style={styles.saleDetailRow}>
+                        <MaterialCommunityIcons name="account-outline" size={16} color="#666" />
+                        <Text style={styles.saleDetailLabel}>Created By:</Text>
+                        <Text style={styles.saleDetailValue}>{item.sold_by || '-'}</Text>
+                    </View>
+                </View>
             </View>
-            <View style={styles.saleItemBody}>
-                <View style={styles.saleDetailRow}>
-                    <MaterialCommunityIcons name="package-variant" size={16} color="#666" />
-                    <Text style={styles.saleDetailLabel}>Product:</Text>
-                    <Text style={styles.saleDetailValue}>{item.product_name || '-'}</Text>
-                </View>
-                <View style={styles.saleDetailRow}>
-                    <MaterialCommunityIcons name="ticket-outline" size={16} color="#666" />
-                    <Text style={styles.saleDetailLabel}>Number:</Text>
-                    <Text style={[styles.saleDetailValue, { fontWeight: '700', color: '#3a48c2' }]}>{item.lottery_number}</Text>
-                </View>
-                <View style={styles.saleDetailRow}>
-                    <MaterialCommunityIcons name="counter" size={16} color="#666" />
-                    <Text style={styles.saleDetailLabel}>Qty:</Text>
-                    <Text style={styles.saleDetailValue}>{item.qty}</Text>
-                </View>
-                <View style={styles.saleDetailRow}>
-                    <MaterialCommunityIcons name="calendar-clock" size={16} color="#666" />
-                    <Text style={styles.saleDetailLabel}>Date & Time:</Text>
-                    <Text style={styles.saleDetailValue}>{formatDateTime(item.sold_at || item.createdAt || item.created_at)}</Text>
-                </View>
-            </View>
-        </View>
-    );
+        );
+    };
 
     if (isLoading) {
         return (
@@ -272,227 +311,267 @@ const WinningScreen = ({ navigation }) => {
             </LinearGradient>
 
             <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
-                {/* Form Container */}
-                <View style={styles.formContainer}>
-                    {/* Category Dropdown */}
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Category *</Text>
-                        <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() => setShowDropdown(!showDropdown)}
-                        >
-                            <Text style={selectedCategory ? styles.dropdownTextSelected : styles.dropdownText}>
-                                {selectedCategory ? selectedCategory.category_name : 'Select a category'}
-                            </Text>
-                            <MaterialCommunityIcons
-                                name={showDropdown ? "chevron-up" : "chevron-down"}
-                                size={24}
-                                color="#666"
-                            />
-                        </TouchableOpacity>
+                {!permissions.view ? (
+                    <View style={styles.noPermissionContainer}>
+                        <MaterialCommunityIcons name="lock-outline" size={80} color="#ddd" />
+                        <Text style={styles.noPermissionTitle}>No Permission</Text>
+                        <Text style={styles.noPermissionText}>
+                            You don't have permission to access Winning Entry.{'\n'}
+                            Please contact your administrator.
+                        </Text>
+                    </View>
+                ) : (
+                    <>
+                        {/* Form Container */}
+                        <View style={styles.formContainer}>
+                            {/* Category Dropdown */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Category *</Text>
+                                <TouchableOpacity
+                                    style={styles.dropdownButton}
+                                    onPress={() => setShowDropdown(!showDropdown)}
+                                >
+                                    <Text style={selectedCategory ? styles.dropdownTextSelected : styles.dropdownText}>
+                                        {selectedCategory ? selectedCategory.category_name : 'Select a category'}
+                                    </Text>
+                                    <MaterialCommunityIcons
+                                        name={showDropdown ? "chevron-up" : "chevron-down"}
+                                        size={24}
+                                        color="#666"
+                                    />
+                                </TouchableOpacity>
 
-                        {showDropdown && (
-                            <View style={styles.dropdownList}>
-                                {categories.length === 0 ? (
-                                    <Text style={styles.dropdownEmptyText}>No categories available</Text>
-                                ) : (
-                                    categories.map((category) => (
-                                        <TouchableOpacity
-                                            key={category.id}
-                                            style={[
-                                                styles.dropdownItem,
-                                                selectedCategory?.id === category.id && styles.dropdownItemSelected
-                                            ]}
-                                            onPress={() => handleCategorySelect(category)}
-                                        >
-                                            <Text style={[
-                                                styles.dropdownItemText,
-                                                selectedCategory?.id === category.id && styles.dropdownItemTextSelected
-                                            ]}>
-                                                {category.category_name}
-                                            </Text>
-                                            {selectedCategory?.id === category.id && (
-                                                <MaterialCommunityIcons name="check" size={20} color="#3a48c2" />
-                                            )}
-                                        </TouchableOpacity>
-                                    ))
+                                {showDropdown && (
+                                    <View style={styles.dropdownList}>
+                                        {categories.length === 0 ? (
+                                            <Text style={styles.dropdownEmptyText}>No categories available</Text>
+                                        ) : (
+                                            categories.map((category) => (
+                                                <TouchableOpacity
+                                                    key={category.id}
+                                                    style={[
+                                                        styles.dropdownItem,
+                                                        selectedCategory?.id === category.id && styles.dropdownItemSelected
+                                                    ]}
+                                                    onPress={() => handleCategorySelect(category)}
+                                                >
+                                                    <Text style={[
+                                                        styles.dropdownItemText,
+                                                        selectedCategory?.id === category.id && styles.dropdownItemTextSelected
+                                                    ]}>
+                                                        {category.category_name}
+                                                    </Text>
+                                                    {selectedCategory?.id === category.id && (
+                                                        <MaterialCommunityIcons name="check" size={20} color="#3a48c2" />
+                                                    )}
+                                                </TouchableOpacity>
+                                            ))
+                                        )}
+                                    </View>
                                 )}
                             </View>
-                        )}
-                    </View>
 
-                    {/* Selected Category Info */}
-                    {selectedCategory && (
-                        <View style={styles.selectedInfoContainer}>
-                            <View style={styles.selectedInfoRow}>
-                                <MaterialCommunityIcons name="shape" size={18} color="#3a48c2" />
-                                <Text style={styles.selectedInfoLabel}>Category:</Text>
-                                <Text style={styles.selectedInfoValue}>{selectedCategory.category_name}</Text>
-                            </View>
-                            <View style={styles.selectedInfoRow}>
-                                <MaterialCommunityIcons name="clock-outline" size={18} color="#3a48c2" />
-                                <Text style={styles.selectedInfoLabel}>Time Slot:</Text>
-                                <Text style={styles.selectedInfoValue}>{getTimeSlotDisplay()}</Text>
-                            </View>
-                            {getTimeWindowPreview() && (
-                                <>
-                                    <View style={styles.selectedInfoDivider} />
+                            {/* Selected Category Info */}
+                            {selectedCategory && (
+                                <View style={styles.selectedInfoContainer}>
                                     <View style={styles.selectedInfoRow}>
-                                        <MaterialCommunityIcons name="calendar-arrow-right" size={18} color="#17996eff" />
-                                        <Text style={styles.selectedInfoLabel}>From:</Text>
-                                        <Text style={[styles.selectedInfoValue, { color: '#17996eff' }]}>{getTimeWindowPreview().start}</Text>
+                                        <MaterialCommunityIcons name="shape" size={18} color="#3a48c2" />
+                                        <Text style={styles.selectedInfoLabel}>Category:</Text>
+                                        <Text style={styles.selectedInfoValue}>{selectedCategory.category_name}</Text>
                                     </View>
                                     <View style={styles.selectedInfoRow}>
-                                        <MaterialCommunityIcons name="calendar-arrow-left" size={18} color="#181a8fff" />
-                                        <Text style={styles.selectedInfoLabel}>To:</Text>
-                                        <Text style={[styles.selectedInfoValue, { color: '#181a8fff' }]}>{getTimeWindowPreview().end}</Text>
+                                        <MaterialCommunityIcons name="clock-outline" size={18} color="#3a48c2" />
+                                        <Text style={styles.selectedInfoLabel}>Time Slot:</Text>
+                                        <Text style={styles.selectedInfoValue}>{getTimeSlotDisplay()}</Text>
                                     </View>
-                                </>
+                                    {getTimeWindowPreview() && (
+                                        <>
+                                            <View style={styles.selectedInfoDivider} />
+                                            <View style={styles.selectedInfoRow}>
+                                                <MaterialCommunityIcons name="calendar-arrow-right" size={18} color="#17996eff" />
+                                                <Text style={styles.selectedInfoLabel}>From:</Text>
+                                                <Text style={[styles.selectedInfoValue, { color: '#17996eff' }]}>{getTimeWindowPreview().start}</Text>
+                                            </View>
+                                            <View style={styles.selectedInfoRow}>
+                                                <MaterialCommunityIcons name="calendar-arrow-left" size={18} color="#181a8fff" />
+                                                <Text style={styles.selectedInfoLabel}>To:</Text>
+                                                <Text style={[styles.selectedInfoValue, { color: '#181a8fff' }]}>{getTimeWindowPreview().end}</Text>
+                                            </View>
+                                        </>
+                                    )}
+                                </View>
                             )}
+
+                            {/* Lottery Number Input */}
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Lottery Number *</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="Enter lottery number"
+                                    value={lotteryNumber}
+                                    onChangeText={(text) => {
+                                        setLotteryNumber(text);
+                                        // Clear results when number changes
+                                        if (showResults) {
+                                            setResults(null);
+                                            setShowResults(false);
+                                        }
+                                    }}
+                                    placeholderTextColor="#999"
+                                    keyboardType="default"
+                                />
+                            </View>
+
+                            {/* Action Buttons */}
+                            <View style={styles.buttonRow}>
+                                <TouchableOpacity
+                                    style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+                                    onPress={handleSubmit}
+                                    disabled={isSubmitting}
+                                >
+                                    {isSubmitting ? (
+                                        <ActivityIndicator color="#fff" />
+                                    ) : (
+                                        <>
+                                            <MaterialCommunityIcons name="magnify" size={20} color="#fff" />
+                                            <Text style={styles.submitButtonText}>Check</Text>
+                                        </>
+                                    )}
+                                </TouchableOpacity>
+
+                            </View>
                         </View>
-                    )}
 
-                    {/* Lottery Number Input */}
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Lottery Number *</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Enter lottery number"
-                            value={lotteryNumber}
-                            onChangeText={(text) => {
-                                setLotteryNumber(text);
-                                // Clear results when number changes
-                                if (showResults) {
-                                    setResults(null);
-                                    setShowResults(false);
-                                }
-                            }}
-                            placeholderTextColor="#999"
-                            keyboardType="default"
-                        />
-                    </View>
+                        {/* Results Section */}
+                        {showResults && results && (
+                            <View style={styles.resultsContainer}>
 
-                    {/* Action Buttons */}
-                    <View style={styles.buttonRow}>
-                        <TouchableOpacity
-                            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-                            onPress={handleSubmit}
-                            disabled={isSubmitting}
-                        >
-                            {isSubmitting ? (
-                                <ActivityIndicator color="#fff" />
-                            ) : (
-                                <>
-                                    <MaterialCommunityIcons name="magnify" size={20} color="#fff" />
-                                    <Text style={styles.submitButtonText}>Check</Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
+                                {/* No Match Banner */}
+                                {!results.is_winner && (
+                                    <LinearGradient
+                                        colors={['#ef444488', '#dc262688']}
+                                        style={styles.resultBanner}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                    >
+                                        <MaterialCommunityIcons name="close-circle" size={40} color="#fff" />
+                                        <Text style={styles.resultBannerTitle}>No Match Found</Text>
+                                        <Text style={styles.resultBannerSubtitle}>
+                                            No sales match this lottery number in the current window
+                                        </Text>
+                                    </LinearGradient>
+                                )}
 
-                    </View>
-                </View>
-
-                {/* Results Section */}
-                {showResults && results && (
-                    <View style={styles.resultsContainer}>
-
-                        {/* No Match Banner */}
-                        {!results.is_winner && (
-                            <LinearGradient
-                                colors={['#ef444488', '#dc262688']}
-                                style={styles.resultBanner}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                            >
-                                <MaterialCommunityIcons name="close-circle" size={40} color="#fff" />
-                                <Text style={styles.resultBannerTitle}>No Match Found</Text>
-                                <Text style={styles.resultBannerSubtitle}>
-                                    No sales match this lottery number in the current window
-                                </Text>
-                            </LinearGradient>
-                        )}
-
-                        {/* Winner Summary */}
-                        {results.is_winner && results.summary && (
-                            <View style={styles.summaryCard}>
-                                <View style={styles.summaryHeader}>
-                                    <Text style={styles.summaryTitle}>Summary</Text>
-                                </View>
-                                <View style={styles.summaryDivider} />
-                                {results.summary.round_3_count > 0 && (
-                                    <View style={styles.summaryRow}>
-                                        <Text style={styles.summaryLabel}>Exact Match - {results.lottery_number}</Text>
-                                        <Text style={styles.summaryCount}>{results.summary.round_3_count}</Text>
+                                {/* Winner Summary */}
+                                {results.is_winner && results.summary && (
+                                    <View style={styles.summaryCard}>
+                                        <View style={styles.summaryHeader}>
+                                            <Text style={styles.summaryTitle}>Match Summary</Text>
+                                            <Text style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>Number: {results.lottery_number}</Text>
+                                        </View>
+                                        <View style={styles.summaryDivider} />
+                                        {results.summary.round_4_count > 0 && (
+                                            <View style={styles.summaryRow}>
+                                                <View style={[styles.summaryDot, { backgroundColor: '#92400E' }]} />
+                                                <Text style={styles.summaryLabel}>Exact Match ({results.lottery_number})</Text>
+                                                <Text style={[styles.summaryCount, { color: '#92400E' }]}>{results.summary.round_4_count}</Text>
+                                            </View>
+                                        )}
+                                        {results.summary.round_3_count > 0 && (
+                                            <View style={styles.summaryRow}>
+                                                <View style={[styles.summaryDot, { backgroundColor: '#065F46' }]} />
+                                                <Text style={styles.summaryLabel}>Last 3 Digits ({results.lottery_number.slice(-3)})</Text>
+                                                <Text style={[styles.summaryCount, { color: '#065F46' }]}>{results.summary.round_3_count}</Text>
+                                            </View>
+                                        )}
+                                        {results.summary.round_2_count > 0 && (
+                                            <View style={styles.summaryRow}>
+                                                <View style={[styles.summaryDot, { backgroundColor: '#374151' }]} />
+                                                <Text style={styles.summaryLabel}>Last 2 Digits ({results.lottery_number.slice(-2)})</Text>
+                                                <Text style={[styles.summaryCount, { color: '#374151' }]}>{results.summary.round_2_count}</Text>
+                                            </View>
+                                        )}
+                                        {results.summary.round_1_count > 0 && (
+                                            <View style={styles.summaryRow}>
+                                                <View style={[styles.summaryDot, { backgroundColor: '#991B1B' }]} />
+                                                <Text style={styles.summaryLabel}>Last Digit ({results.lottery_number.slice(-1)})</Text>
+                                                <Text style={[styles.summaryCount, { color: '#991B1B' }]}>{results.summary.round_1_count}</Text>
+                                            </View>
+                                        )}
+                                        <View style={styles.summaryDivider} />
+                                        <View style={styles.summaryRow}>
+                                            <Text style={[styles.summaryLabel, { fontWeight: '700' }]}>Total Matches:</Text>
+                                            <Text style={[styles.summaryCount, { fontWeight: '800', color: '#3a48c2' }]}>{results.summary.total_winners}</Text>
+                                        </View>
                                     </View>
                                 )}
-                                {results.summary.round_2_count > 0 && (
-                                    <View style={styles.summaryRow}>
-                                        <Text style={styles.summaryLabel}>Last 2 digits - {results.lottery_number.slice(-2)}</Text>
-                                        <Text style={styles.summaryCount}>{results.summary.round_2_count}</Text>
+
+                                {/* Round 4 - Exact Match */}
+                                {results.results?.round_4?.length > 0 && (
+                                    <View style={styles.salesListContainer}>
+                                        <View style={[styles.roundHeader, { backgroundColor: '#FEF3C7' }]}>
+                                            <View>
+                                                <Text style={[styles.roundHeaderTitle, { color: '#92400E' }]}>EXACT MATCH ({results.lottery_number}) - {results.results.round_4.length}</Text>
+                                            </View>
+                                        </View>
+                                        {results.results.round_4.map((item, index) => (
+                                            <View key={`r4-${item.id}-${item.lottery_number}-${index}`}>
+                                                {renderSaleItem({ item, index })}
+                                            </View>
+                                        ))}
                                     </View>
                                 )}
-                                {results.summary.round_1_count > 0 && (
-                                    <View style={styles.summaryRow}>
-                                        <Text style={styles.summaryLabel}>Last digit - {results.lottery_number.slice(-1)}</Text>
-                                        <Text style={styles.summaryCount}>{results.summary.round_1_count}</Text>
+
+                                {/* Round 3 - Last 3 Digits Match */}
+                                {results.results?.round_3?.length > 0 && (
+                                    <View style={styles.salesListContainer}>
+                                        <View style={[styles.roundHeader, { backgroundColor: '#ECFDF5' }]}>
+                                            <View>
+                                                <Text style={[styles.roundHeaderTitle, { color: '#065F46' }]}>LAST 3 DIGITS ({results.lottery_number.slice(-3)}) - {results.results.round_3.length}</Text>
+                                            </View>
+                                        </View>
+                                        {results.results.round_3.map((item, index) => (
+                                            <View key={`r3-${item.id}-${item.lottery_number}-${index}`}>
+                                                {renderSaleItem({ item, index })}
+                                            </View>
+                                        ))}
                                     </View>
                                 )}
-                                <View style={styles.summaryDivider} />
-                                <View style={styles.summaryRow}>
-                                    <Text style={[styles.summaryLabel, { fontWeight: '700' }]}>Total Matches:</Text>
-                                    <Text style={[styles.summaryCount, { fontWeight: '800', color: '#3a48c2' }]}>{results.summary.total_winners}</Text>
-                                </View>
-                            </View>
-                        )}
 
-                        {/* Round 3 - Exact Match */}
-                        {results.results?.round_3?.length > 0 && (
-                            <View style={styles.salesListContainer}>
-                                <View style={[styles.roundHeader, { backgroundColor: '#FEF3C7' }]}>
-                                    <View>
-                                        <Text style={[styles.roundHeaderTitle, { color: '#92400E' }]}>EXACT MATCH ({results.lottery_number} ) - {results.results.round_3.length}</Text>
+                                {/* Round 2 - Last 2 Digits Match */}
+                                {results.results?.round_2?.length > 0 && (
+                                    <View style={styles.salesListContainer}>
+                                        <View style={[styles.roundHeader, { backgroundColor: '#F3F4F6' }]}>
+                                            <View>
+                                                <Text style={[styles.roundHeaderTitle, { color: '#374151' }]}>LAST 2 DIGITS ({results.lottery_number.slice(-2)}) - {results.results.round_2.length}</Text>
+                                            </View>
+                                        </View>
+                                        {results.results.round_2.map((item, index) => (
+                                            <View key={`r2-${item.id}-${item.lottery_number}-${index}`}>
+                                                {renderSaleItem({ item, index })}
+                                            </View>
+                                        ))}
                                     </View>
-                                </View>
-                                {results.results.round_3.map((item, index) => (
-                                    <View key={`r3-${item.id}-${item.lottery_number}-${index}`}>
-                                        {renderSaleItem({ item, index })}
-                                    </View>
-                                ))}
-                            </View>
-                        )}
+                                )}
 
-                        {/* Round 2 - Last 2 Digits Match */}
-                        {results.results?.round_2?.length > 0 && (
-                            <View style={styles.salesListContainer}>
-                                <View style={[styles.roundHeader, { backgroundColor: '#F3F4F6' }]}>
-                                    <View>
-                                        <Text style={[styles.roundHeaderTitle, { color: '#374151' }]}>LAST 2 DIGITS ({results.lottery_number.slice(-2)}) - {results.results.round_2.length}</Text>
+                                {/* Round 1 - Last 1 Digit Match */}
+                                {results.results?.round_1?.length > 0 && (
+                                    <View style={styles.salesListContainer}>
+                                        <View style={[styles.roundHeader, { backgroundColor: '#FEF2F2' }]}>
+                                            <View>
+                                                <Text style={[styles.roundHeaderTitle, { color: '#991B1B' }]}>LAST DIGIT ({results.lottery_number.slice(-1)}) - {results.results.round_1.length}</Text>
+                                            </View>
+                                        </View>
+                                        {results.results.round_1.map((item, index) => (
+                                            <View key={`r1-${item.id}-${item.lottery_number}-${index}`}>
+                                                {renderSaleItem({ item, index })}
+                                            </View>
+                                        ))}
                                     </View>
-                                </View>
-                                {results.results.round_2.map((item, index) => (
-                                    <View key={`r2-${item.id}-${item.lottery_number}-${index}`}>
-                                        {renderSaleItem({ item, index })}
-                                    </View>
-                                ))}
+                                )}
                             </View>
                         )}
-
-                        {/* Round 1 - Last 1 Digit Match */}
-                        {results.results?.round_1?.length > 0 && (
-                            <View style={styles.salesListContainer}>
-                                <View style={[styles.roundHeader, { backgroundColor: '#FEF2F2' }]}>
-                                    <View>
-                                        <Text style={[styles.roundHeaderTitle, { color: '#991B1B' }]}>LAST DIGIT ({results.lottery_number.slice(-1)}) - {results.results.round_1.length}</Text>
-                                    </View>
-                                </View>
-                                {results.results.round_1.map((item, index) => (
-                                    <View key={`r1-${item.id}-${item.lottery_number}-${index}`}>
-                                        {renderSaleItem({ item, index })}
-                                    </View>
-                                ))}
-                            </View>
-                        )}
-                    </View>
+                    </>
                 )}
             </ScrollView>
         </View>
@@ -503,6 +582,26 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#F8F9FD',
+    },
+    noPermissionContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 100,
+        paddingHorizontal: 40,
+    },
+    noPermissionTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#666',
+        marginTop: 20,
+        marginBottom: 10,
+    },
+    noPermissionText: {
+        fontSize: 16,
+        color: '#999',
+        textAlign: 'center',
+        lineHeight: 24,
     },
     loadingContainer: {
         flex: 1,
@@ -858,6 +957,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 5,
+    },
+    summaryDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        marginRight: 10,
     },
     summaryRoundIcon: {
         fontSize: 18,
