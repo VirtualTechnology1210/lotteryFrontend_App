@@ -164,6 +164,16 @@ const UserScreen = ({ navigation }) => {
             Alert.alert('Validation Error', 'Please enter a valid email address');
             return;
         }
+
+        // Restrict admin email usage
+        const ADMIN_EMAIL = 'admin@lottery.com';
+        if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+            Alert.alert(
+                'Restriction',
+                'The email "admin@lottery.com" is reserved for the system administrator and cannot be used for user creation.'
+            );
+            return;
+        }
         if (!editingUser && !password.trim()) {
             Alert.alert('Validation Error', 'Please enter password');
             return;

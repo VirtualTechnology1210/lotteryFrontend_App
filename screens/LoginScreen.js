@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import CheckBox from '@react-native-community/checkbox';
 import { authService } from '../services';
 import { permissionService } from '../services/permissionService';
 
@@ -57,6 +58,27 @@ const LoginScreen = ({ navigation }) => {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
+
+    // Load remembered email on mount
+    React.useEffect(() => {
+        const loadRememberedData = async () => {
+            try {
+                const savedEmail = await AsyncStorage.getItem('rememberedEmail');
+                const savedPassword = await AsyncStorage.getItem('rememberedPassword');
+                const isRemembered = await AsyncStorage.getItem('rememberMe');
+
+                if (savedEmail && isRemembered === 'true') {
+                    setEmail(savedEmail);
+                    if (savedPassword) setPassword(savedPassword);
+                    setRememberMe(true);
+                }
+            } catch (error) {
+                console.error('Error loading remembered data:', error);
+            }
+        };
+        loadRememberedData();
+    }, []);
 
     // Memoized email validation regex
     const emailRegex = useMemo(() => /\S+@\S+\.\S+/, []);
@@ -129,6 +151,17 @@ const LoginScreen = ({ navigation }) => {
                     }
                 }
 
+                // Handle Remember Me persistence
+                if (rememberMe) {
+                    await AsyncStorage.multiSet([
+                        ['rememberedEmail', trimmedEmail],
+                        ['rememberedPassword', password],
+                        ['rememberMe', 'true']
+                    ]);
+                } else {
+                    await AsyncStorage.multiRemove(['rememberedEmail', 'rememberedPassword', 'rememberMe']);
+                }
+
                 // Reset form
                 setEmail('');
                 setPassword('');
@@ -148,7 +181,7 @@ const LoginScreen = ({ navigation }) => {
                 error.message || 'Unable to connect to server. Please check your connection.'
             );
         }
-    }, [email, password, navigation, validateInput]);
+    }, [email, password, navigation, validateInput, rememberMe]);
 
     // Memoized toggle handler
     const toggleShowPassword = useCallback(() => {
@@ -205,13 +238,25 @@ const LoginScreen = ({ navigation }) => {
                             rightIcon={passwordIcon}
                         />
 
-                        <TouchableOpacity
-                            style={styles.forgotPassword}
-                            disabled={isLoading}
-                            activeOpacity={0.7}
-                        >
-                            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-                        </TouchableOpacity>
+                        <View style={styles.optionsContainer}>
+                            <TouchableOpacity
+                                style={styles.rememberMeContainer}
+                                disabled={isLoading}
+                                activeOpacity={0.7}
+                                onPress={() => setRememberMe(!rememberMe)}
+                            >
+                                <CheckBox
+                                    disabled={isLoading}
+                                    value={rememberMe}
+                                    onValueChange={(newValue) => setRememberMe(newValue)}
+                                    tintColors={{ true: '#2510C4', false: '#666' }}
+                                    style={styles.checkbox}
+                                />
+                                <Text style={[styles.rememberMeText, rememberMe && styles.rememberMeTextActive]}>
+                                    Remember me
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
 
                         <TouchableOpacity
                             style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
@@ -226,13 +271,6 @@ const LoginScreen = ({ navigation }) => {
                                 <Text style={styles.loginButtonText}>Login</Text>
                             )}
                         </TouchableOpacity>
-
-                        <View style={styles.signUpContainer}>
-                            <Text style={styles.signUpText}>Don't have an account? </Text>
-                            <TouchableOpacity disabled={isLoading} activeOpacity={0.7}>
-                                <Text style={styles.signUpLink}>Sign Up</Text>
-                            </TouchableOpacity>
-                        </View>
                     </View>
                 </KeyboardAvoidingView>
             </TouchableWithoutFeedback>
@@ -299,9 +337,32 @@ const styles = StyleSheet.create({
     eyeIcon: {
         padding: 10,
     },
+    optionsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 5,
+        marginBottom: 40,
+    },
+    rememberMeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    checkbox: {
+        transform: [{ scaleX: 0.9 }, { scaleY: 0.9 }], // Adjust size if needed to match previous icon size
+        marginRight: 0, // CheckBox usually has some padding
+    },
+    rememberMeText: {
+        fontSize: 14,
+        color: '#666',
+        marginLeft: 2, // Adjusted for CheckBox spacing
+    },
+    rememberMeTextActive: {
+        color: '#333',
+        fontWeight: '500',
+    },
     forgotPassword: {
-        alignSelf: 'flex-end',
-        marginBottom: 30,
+        // Alignment handled by optionsContainer
     },
     forgotPasswordText: {
         color: '#2510C4',
