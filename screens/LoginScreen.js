@@ -80,8 +80,7 @@ const LoginScreen = ({ navigation }) => {
         loadRememberedData();
     }, []);
 
-    // Memoized email validation regex
-    const emailRegex = useMemo(() => /\S+@\S+\.\S+/, []);
+
 
     // Fast synchronous validation - no async operations
     const validateInput = useCallback(() => {
@@ -90,12 +89,9 @@ const LoginScreen = ({ navigation }) => {
             Alert.alert('Error', 'Please fill in all fields');
             return false;
         }
-        if (!emailRegex.test(trimmedEmail)) {
-            Alert.alert('Error', 'Please enter a valid email address');
-            return false;
-        }
+
         return true;
-    }, [email, password, emailRegex]);
+    }, [email, password]);
 
     // Optimized login handler - fetches permissions BEFORE navigation
     const handleLogin = useCallback(async () => {
@@ -216,13 +212,13 @@ const LoginScreen = ({ navigation }) => {
                     </View>
 
                     <View style={styles.formContainer}>
-                        {/* Email Input - Memoized for performance */}
+                        {/* Username Input - Memoized for performance */}
                         <InputField
-                            icon="email-outline"
+                            icon="account-outline"
                             value={email}
                             onChangeText={setEmail}
-                            placeholder="Email Address"
-                            keyboardType="email-address"
+                            placeholder="Username / Email"
+                            keyboardType="default"
                             autoCapitalize="none"
                             disabled={isLoading}
                         />

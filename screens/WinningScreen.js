@@ -203,22 +203,34 @@ const WinningScreen = ({ navigation }) => {
 
     /**
      * Get the matching suffix info for display.
-     * For a winning number like 8321:
-     *   Round 4 (Exact): full number "8321"
-     *   Round 3 (Last 3): suffix "321"
-     *   Round 2 (Last 2): suffix "21"
-     *   Round 1 (Last 1): suffix "1"
+     * Dynamically determines label, suffix and color based on the round data.
+     * matchRound = digit_count (e.g. 4 for exact on a 4-digit input, 3 for last 3, etc.)
      */
+    const getRoundColor = (digitCount, isExact) => {
+        if (isExact) return '#92400E';
+        if (digitCount >= 3) return '#065F46';
+        if (digitCount === 2) return '#374151';
+        return '#991B1B';
+    };
+
+    const getRoundBgColor = (digitCount, isExact) => {
+        if (isExact) return '#FEF3C7';
+        if (digitCount >= 3) return '#ECFDF5';
+        if (digitCount === 2) return '#F3F4F6';
+        return '#FEF2F2';
+    };
+
     const getMatchInfo = (matchRound) => {
         if (!results) return { label: '', suffix: '', color: '#666' };
         const num = results.lottery_number;
-        switch (matchRound) {
-            case 4: return { label: 'Exact Match', suffix: num, color: '#92400E' };
-            case 3: return { label: 'Last 3 Digits', suffix: num.slice(-3), color: '#065F46' };
-            case 2: return { label: 'Last 2 Digits', suffix: num.slice(-2), color: '#374151' };
-            case 1: return { label: 'Last Digit', suffix: num.slice(-1), color: '#991B1B' };
-            default: return { label: '', suffix: '', color: '#666' };
-        }
+        const inputLength = results.input_length || num.length;
+        const isExact = (matchRound === inputLength);
+        const suffix = num.slice(-matchRound);
+        const label = isExact
+            ? 'Exact Match'
+            : (matchRound === 1 ? 'Last Digit' : `Last ${matchRound} Digits`);
+        const color = getRoundColor(matchRound, isExact);
+        return { label, suffix, color };
     };
 
     const renderSaleItem = ({ item, index }) => {
@@ -463,112 +475,60 @@ const WinningScreen = ({ navigation }) => {
                                 )}
 
                                 {/* Winner Summary */}
-                                {results.is_winner && results.summary && (
+                                {results.is_winner && results.rounds && (
                                     <View style={styles.summaryCard}>
                                         <View style={styles.summaryHeader}>
                                             <Text style={styles.summaryTitle}>Match Summary</Text>
                                             <Text style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>Number: {results.lottery_number}</Text>
                                         </View>
                                         <View style={styles.summaryDivider} />
-                                        {results.summary.round_4_count > 0 && (
-                                            <View style={styles.summaryRow}>
-                                                <View style={[styles.summaryDot, { backgroundColor: '#92400E' }]} />
-                                                <Text style={styles.summaryLabel}>Exact Match ({results.lottery_number})</Text>
-                                                <Text style={[styles.summaryCount, { color: '#92400E' }]}>{results.summary.round_4_count}</Text>
-                                            </View>
-                                        )}
-                                        {results.summary.round_3_count > 0 && (
-                                            <View style={styles.summaryRow}>
-                                                <View style={[styles.summaryDot, { backgroundColor: '#065F46' }]} />
-                                                <Text style={styles.summaryLabel}>Last 3 Digits ({results.lottery_number.slice(-3)})</Text>
-                                                <Text style={[styles.summaryCount, { color: '#065F46' }]}>{results.summary.round_3_count}</Text>
-                                            </View>
-                                        )}
-                                        {results.summary.round_2_count > 0 && (
-                                            <View style={styles.summaryRow}>
-                                                <View style={[styles.summaryDot, { backgroundColor: '#374151' }]} />
-                                                <Text style={styles.summaryLabel}>Last 2 Digits ({results.lottery_number.slice(-2)})</Text>
-                                                <Text style={[styles.summaryCount, { color: '#374151' }]}>{results.summary.round_2_count}</Text>
-                                            </View>
-                                        )}
-                                        {results.summary.round_1_count > 0 && (
-                                            <View style={styles.summaryRow}>
-                                                <View style={[styles.summaryDot, { backgroundColor: '#991B1B' }]} />
-                                                <Text style={styles.summaryLabel}>Last Digit ({results.lottery_number.slice(-1)})</Text>
-                                                <Text style={[styles.summaryCount, { color: '#991B1B' }]}>{results.summary.round_1_count}</Text>
-                                            </View>
-                                        )}
+                                        {results.rounds.map((round) => {
+                                            if (round.count === 0) return null;
+                                            const inputLength = results.input_length || results.lottery_number.length;
+                                            const isExact = (round.digit_count === inputLength);
+                                            const color = getRoundColor(round.digit_count, isExact);
+                                            return (
+                                                <View style={styles.summaryRow} key={`summary-${round.digit_count}`}>
+                                                    <View style={[styles.summaryDot, { backgroundColor: color }]} />
+                                                    <Text style={styles.summaryLabel}>{round.label} ({round.suffix})</Text>
+                                                    <Text style={[styles.summaryCount, { color }]}>{round.count}</Text>
+                                                </View>
+                                            );
+                                        })}
                                         <View style={styles.summaryDivider} />
                                         <View style={styles.summaryRow}>
                                             <Text style={[styles.summaryLabel, { fontWeight: '700' }]}>Total Matches:</Text>
-                                            <Text style={[styles.summaryCount, { fontWeight: '800', color: '#3a48c2' }]}>{results.summary.total_winners}</Text>
+                                            <Text style={[styles.summaryCount, { fontWeight: '800', color: '#3a48c2' }]}>{results.total_winners}</Text>
                                         </View>
                                     </View>
                                 )}
 
-                                {/* Round 4 - Exact Match */}
-                                {results.results?.round_4?.length > 0 && (
-                                    <View style={styles.salesListContainer}>
-                                        <View style={[styles.roundHeader, { backgroundColor: '#FEF3C7' }]}>
-                                            <View>
-                                                <Text style={[styles.roundHeaderTitle, { color: '#92400E' }]}>EXACT MATCH ({results.lottery_number}) - {results.results.round_4.length}</Text>
-                                            </View>
-                                        </View>
-                                        {results.results.round_4.map((item, index) => (
-                                            <View key={`r4-${item.id}-${item.lottery_number}-${index}`}>
-                                                {renderSaleItem({ item, index })}
-                                            </View>
-                                        ))}
-                                    </View>
-                                )}
+                                {/* Dynamic Round Lists */}
+                                {results.rounds && results.rounds.map((round) => {
+                                    if (round.count === 0) return null;
+                                    const inputLength = results.input_length || results.lottery_number.length;
+                                    const isExact = (round.digit_count === inputLength);
+                                    const color = getRoundColor(round.digit_count, isExact);
+                                    const bgColor = getRoundBgColor(round.digit_count, isExact);
+                                    const headerLabel = isExact
+                                        ? `EXACT MATCH (${round.suffix})`
+                                        : (round.digit_count === 1 ? `LAST DIGIT (${round.suffix})` : `LAST ${round.digit_count} DIGITS (${round.suffix})`);
 
-                                {/* Round 3 - Last 3 Digits Match */}
-                                {results.results?.round_3?.length > 0 && (
-                                    <View style={styles.salesListContainer}>
-                                        <View style={[styles.roundHeader, { backgroundColor: '#ECFDF5' }]}>
-                                            <View>
-                                                <Text style={[styles.roundHeaderTitle, { color: '#065F46' }]}>LAST 3 DIGITS ({results.lottery_number.slice(-3)}) - {results.results.round_3.length}</Text>
+                                    return (
+                                        <View style={styles.salesListContainer} key={`round-${round.digit_count}`}>
+                                            <View style={[styles.roundHeader, { backgroundColor: bgColor }]}>
+                                                <View>
+                                                    <Text style={[styles.roundHeaderTitle, { color }]}>{headerLabel} - {round.count}</Text>
+                                                </View>
                                             </View>
+                                            {round.matches.map((item, index) => (
+                                                <View key={`r${round.digit_count}-${item.id}-${item.lottery_number}-${index}`}>
+                                                    {renderSaleItem({ item, index })}
+                                                </View>
+                                            ))}
                                         </View>
-                                        {results.results.round_3.map((item, index) => (
-                                            <View key={`r3-${item.id}-${item.lottery_number}-${index}`}>
-                                                {renderSaleItem({ item, index })}
-                                            </View>
-                                        ))}
-                                    </View>
-                                )}
-
-                                {/* Round 2 - Last 2 Digits Match */}
-                                {results.results?.round_2?.length > 0 && (
-                                    <View style={styles.salesListContainer}>
-                                        <View style={[styles.roundHeader, { backgroundColor: '#F3F4F6' }]}>
-                                            <View>
-                                                <Text style={[styles.roundHeaderTitle, { color: '#374151' }]}>LAST 2 DIGITS ({results.lottery_number.slice(-2)}) - {results.results.round_2.length}</Text>
-                                            </View>
-                                        </View>
-                                        {results.results.round_2.map((item, index) => (
-                                            <View key={`r2-${item.id}-${item.lottery_number}-${index}`}>
-                                                {renderSaleItem({ item, index })}
-                                            </View>
-                                        ))}
-                                    </View>
-                                )}
-
-                                {/* Round 1 - Last 1 Digit Match */}
-                                {results.results?.round_1?.length > 0 && (
-                                    <View style={styles.salesListContainer}>
-                                        <View style={[styles.roundHeader, { backgroundColor: '#FEF2F2' }]}>
-                                            <View>
-                                                <Text style={[styles.roundHeaderTitle, { color: '#991B1B' }]}>LAST DIGIT ({results.lottery_number.slice(-1)}) - {results.results.round_1.length}</Text>
-                                            </View>
-                                        </View>
-                                        {results.results.round_1.map((item, index) => (
-                                            <View key={`r1-${item.id}-${item.lottery_number}-${index}`}>
-                                                {renderSaleItem({ item, index })}
-                                            </View>
-                                        ))}
-                                    </View>
-                                )}
+                                    );
+                                })}
                             </View>
                         )}
                     </>

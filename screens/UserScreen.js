@@ -41,7 +41,7 @@ const UserListItem = memo(({ user, onEdit, onDelete }) => {
             <View style={styles.userInfo}>
                 <Text style={styles.userName}>{user.name}</Text>
                 <View style={styles.metaRow}>
-                    <MaterialCommunityIcons name="email-outline" size={14} color="#666" />
+                    <MaterialCommunityIcons name="account-outline" size={14} color="#666" />
                     <Text style={styles.emailText}>{user.email}</Text>
                 </View>
                 {user.role && (
@@ -155,22 +155,17 @@ const UserScreen = ({ navigation }) => {
             return;
         }
         if (!email.trim()) {
-            Alert.alert('Validation Error', 'Please enter email');
-            return;
-        }
-        // Email validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email.trim())) {
-            Alert.alert('Validation Error', 'Please enter a valid email address');
+            Alert.alert('Validation Error', 'Please enter username/email');
             return;
         }
 
-        // Restrict admin email usage
-        const ADMIN_EMAIL = 'admin@lottery.com';
-        if (email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+
+        // Restrict admin usage
+        const ADMIN_USER = 'admin@lottery.com';
+        if (email.trim().toLowerCase() === ADMIN_USER.toLowerCase() || email.trim().toLowerCase() === 'admin') {
             Alert.alert(
                 'Restriction',
-                'The email "admin@lottery.com" is reserved for the system administrator and cannot be used for user creation.'
+                'The identifier "admin" or "admin@lottery.com" is reserved for the system administrator.'
             );
             return;
         }
@@ -312,16 +307,16 @@ const UserScreen = ({ navigation }) => {
                             />
                         </View>
 
-                        {/* Email */}
+                        {/* Username/Email */}
                         <View style={styles.inputGroup}>
-                            <Text style={styles.label}>Email *</Text>
+                            <Text style={styles.label}>Username/Email *</Text>
                             <TextInput
                                 style={styles.input}
-                                placeholder="Enter email address"
+                                placeholder="Enter username or email"
                                 value={email}
                                 onChangeText={setEmail}
                                 placeholderTextColor="#999"
-                                keyboardType="email-address"
+                                keyboardType="default"
                                 autoCapitalize="none"
                             />
                         </View>

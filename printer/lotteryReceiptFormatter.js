@@ -1,5 +1,8 @@
 /**
- * Lottery Receipt Formatter for Thermal Printer
+ * Lottery Receipt Formatter for Thermal Printer with Custom Font (Bitmap Mode)
+ * 
+ * This version converts text to bitmaps using a custom TTF font (Bookman Old Style)
+ * and prints them using ESC/POS bitmap commands instead of standard text commands.
  * 
  * Receipt Layout:
  * - Username
@@ -7,29 +10,9 @@
  * - Date
  * - Category time slot
  * - Category name
- * 
- * Product Table:
- * Display items in table format with proper alignment:
- * Columns: Product Name | Desc Number | Qty | Price
- * Rules:
- * - Product name left aligned
- * - Desc - Qty centered
- * - Price right aligned
- * - Wrap long names
- * - No borders — use dashed separators instead
- * 
- * Totals Section:
- * - Show total quantity
- * - Show total price
- * - Bold totals
- * - Right aligned totals
- * 
- * Footer:
- * - Center aligned greeting message: "Thank you — Visit Again"
- * 
- * Thermal Print Styling:
- * - Page width: 80mm
- * - Font size small but readable
+ * - Product table with items
+ * - Totals section
+ * - Footer message
  */
 
 // ESC/POS Command Constants
@@ -41,32 +24,15 @@ const CMD = {
     ALIGN_LEFT: [ESC, 0x61, 0x00],
     ALIGN_CENTER: [ESC, 0x61, 0x01],
     ALIGN_RIGHT: [ESC, 0x61, 0x02],
-    BOLD_ON: [ESC, 0x45, 0x01],
-    BOLD_OFF: [ESC, 0x45, 0x00],
-    SIZE_NORMAL: [GS, 0x21, 0x00],
-    SIZE_DOUBLE_HEIGHT: [GS, 0x21, 0x01],
-    SIZE_DOUBLE_BOTH: [GS, 0x21, 0x11],
-    SET_CHAR_SPACING: (n) => [ESC, 0x20, n],
-    LF: [0x0a],
     FEED_5: [ESC, 0x64, 0x05],
     CUT: [GS, 0x56, 0x01],
+    LF: [0x0a],
+    // Bitmap printing commands
+    BITMAP_MODE: [GS, 0x76, 0x30, 0x00], // GS v 0 - Print raster bitmap
 };
 
 // Safe string conversion
 const str = (val) => (val === null || val === undefined) ? '' : String(val);
-
-// Convert string to bytes (UTF-8)
-const toBytes = (s) => {
-    const text = str(s);
-    const bytes = [];
-    for (let i = 0; i < text.length; i++) {
-        const c = text.charCodeAt(i);
-        if (c < 128) bytes.push(c);
-        else if (c < 2048) { bytes.push(192 | (c >> 6)); bytes.push(128 | (c & 63)); }
-        else { bytes.push(224 | (c >> 12)); bytes.push(128 | ((c >> 6) & 63)); bytes.push(128 | (c & 63)); }
-    }
-    return new Uint8Array(bytes);
-};
 
 // Format date as DD/MM/YYYY
 const formatDate = (date) => {
@@ -86,92 +52,354 @@ const formatTime = (date) => {
     } catch (e) { return str(date); }
 };
 
-// Number to Indian words
-const numberToIndianWords = (num) => {
-    if (!num || num === 0) return 'Zero';
-    const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-        'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-    const convert = (n) => {
-        if (n < 20) return ones[n];
-        if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '');
-        if (n < 1000) return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + convert(n % 100) : '');
-        if (n < 100000) return convert(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + convert(n % 1000) : '');
-        if (n < 10000000) return convert(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + convert(n % 100000) : '');
-        return convert(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + convert(n % 10000000) : '');
-    };
-    return convert(Math.floor(Math.abs(num)));
-};
-
-// Convert to title case
-const toTitleCase = (s) => str(s).replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
-
-// Amount to words with currency
-const numberToWordsWithDecimal = (amount, currency = 'INR') => {
-    if (!amount || isNaN(amount)) return '';
-    const [whole, decimal] = Math.abs(amount).toFixed(2).split('.');
-    let result = '';
-    if (whole && parseInt(whole) > 0) {
-        result += toTitleCase(numberToIndianWords(parseInt(whole)));
-        result += currency === 'INR' ? ' Rupees' : ' Dirhams';
+/**
+ * Font Manager - Loads and caches custom fonts
+ */
+class FontManager {
+    constructor() {
+        this.fontsLoaded = new Map();
+        this.fontFamily = 'Bookman Old Style';
     }
-    if (decimal && parseInt(decimal) > 0) {
-        result += ' And ';
-        result += toTitleCase(numberToIndianWords(parseInt(decimal)));
-        result += currency === 'INR' ? ' Paise' : ' Fils';
-    }
-    return result;
-};
 
-// Wrap text to fit width
-const wrapText = (text, maxWidth) => {
-    const words = str(text).split(' ');
-    const lines = [];
-    let currentLine = '';
+    /**
+     * Load custom font from file
+     * @param {string} fontPath - Path to the font file in assets
+     * @returns {Promise<boolean>} - True if loaded successfully
+     */
+    async loadFont(fontPath = '/assets/bookman_old_style.ttf') {
+        if (this.fontsLoaded.has(this.fontFamily)) {
+            return true;
+        }
 
-    words.forEach(word => {
-        if ((currentLine + ' ' + word).trim().length <= maxWidth) {
-            currentLine = (currentLine + ' ' + word).trim();
-        } else {
-            if (currentLine) lines.push(currentLine);
-            // If word is longer than maxWidth, split it
-            if (word.length > maxWidth) {
-                while (word.length > maxWidth) {
-                    lines.push(word.substring(0, maxWidth));
-                    word = word.substring(maxWidth);
-                }
-                currentLine = word;
-            } else {
-                currentLine = word;
+        try {
+            // For browser environment
+            if (typeof window !== 'undefined' && 'FontFace' in window) {
+                const fontFace = new FontFace(this.fontFamily, `url(${fontPath})`);
+                await fontFace.load();
+                document.fonts.add(fontFace);
+                this.fontsLoaded.set(this.fontFamily, true);
+                console.log(`[FontManager] Loaded font: ${this.fontFamily}`);
+                return true;
             }
+
+            // For Node.js environment with canvas library
+            // You would need to register the font with the canvas library
+            console.warn('[FontManager] Font loading in Node.js requires canvas library setup');
+            this.fontsLoaded.set(this.fontFamily, false);
+            return false;
+        } catch (error) {
+            console.error('[FontManager] Failed to load font:', error);
+            return false;
         }
-    });
-
-    if (currentLine) lines.push(currentLine);
-    return lines;
-};
-
-const getDescLines = (descText, maxPairs = 2) => {
-    const text = str(descText);
-    if (!text || text === '-') return ['-'];
-    if (!text.includes(',')) return [wrapText(text, 12)[0]]; // Limit single long desc
-
-    const parts = text.split(',').map(p => p.trim()).filter(p => p);
-    const lines = [];
-    for (let i = 0; i < parts.length; i += maxPairs) {
-        let line = '';
-        for (let j = 0; j < maxPairs && (i + j) < parts.length; j++) {
-            if (line) line += ' , ';
-            line += parts[i + j];
-        }
-        lines.push(line);
     }
-    return lines;
-};
+
+    getFontFamily() {
+        return this.fontFamily;
+    }
+}
+
+const fontManager = new FontManager();
 
 /**
- * Format lottery sales receipt for thermal printer
+ * Text to Bitmap Converter
+ * Renders text with custom font and converts to bitmap for ESC/POS printing
+ */
+class TextToBitmapConverter {
+    constructor(fontFamily = 'Bookman Old Style') {
+        this.fontFamily = fontFamily;
+        this.canvas = null;
+        this.ctx = null;
+        this.initCanvas();
+    }
+
+    initCanvas() {
+        if (typeof document !== 'undefined') {
+            this.canvas = document.createElement('canvas');
+            this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+        } else {
+            console.warn('[TextToBitmap] Canvas not available - running in Node.js?');
+        }
+    }
+
+    /**
+     * Render text to bitmap with custom font
+     * @param {string} text - Text to render
+     * @param {Object} options - Rendering options
+     * @returns {Object} - {width, height, data: Uint8Array}
+     */
+    renderText(text, options = {}) {
+        const {
+            fontSize = 24,
+            bold = false,
+            maxWidth = 576, // 72mm at 8 dots/mm = 576 pixels for 80mm paper
+            align = 'left', // 'left', 'center', 'right'
+            lineHeight = 1.2,
+        } = options;
+
+        if (!this.ctx) {
+            console.error('[TextToBitmap] Canvas context not available');
+            return null;
+        }
+
+        // Set font
+        const fontWeight = bold ? 'bold' : 'normal';
+        this.ctx.font = `${fontWeight} ${fontSize}px "${this.fontFamily}", serif`;
+        this.ctx.textBaseline = 'top';
+
+        // Measure text and handle wrapping
+        const lines = this.wrapText(text, maxWidth, fontSize * lineHeight);
+
+        // Calculate canvas size
+        const lineHeightPx = Math.ceil(fontSize * lineHeight);
+        const height = lines.length * lineHeightPx + 10; // Add padding
+        const width = maxWidth;
+
+        // Set canvas size
+        this.canvas.width = width;
+        this.canvas.height = height;
+
+        // Clear canvas
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillRect(0, 0, width, height);
+
+        // Set text style
+        this.ctx.fillStyle = 'black';
+        this.ctx.font = `${fontWeight} ${fontSize}px "${this.fontFamily}", serif`;
+        this.ctx.textBaseline = 'top';
+
+        // Draw each line
+        lines.forEach((line, index) => {
+            let x = 5; // Left padding
+
+            if (align === 'center') {
+                const metrics = this.ctx.measureText(line);
+                x = (width - metrics.width) / 2;
+            } else if (align === 'right') {
+                const metrics = this.ctx.measureText(line);
+                x = width - metrics.width - 5; // Right padding
+            }
+
+            const y = index * lineHeightPx + 5; // Top padding
+            this.ctx.fillText(line, x, y);
+        });
+
+        // Convert to monochrome bitmap
+        const imageData = this.ctx.getImageData(0, 0, width, height);
+        return this.convertToMonochrome(imageData);
+    }
+
+    /**
+     * Wrap text to fit within maxWidth
+     */
+    wrapText(text, maxWidth, lineHeight) {
+        const words = text.split(' ');
+        const lines = [];
+        let currentLine = '';
+
+        words.forEach(word => {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const metrics = this.ctx.measureText(testLine);
+
+            if (metrics.width <= maxWidth - 10) { // Account for padding
+                currentLine = testLine;
+            } else {
+                if (currentLine) lines.push(currentLine);
+                currentLine = word;
+            }
+        });
+
+        if (currentLine) lines.push(currentLine);
+        return lines.length > 0 ? lines : [text];
+    }
+
+    /**
+     * Convert ImageData to monochrome bitmap
+     */
+    convertToMonochrome(imageData) {
+        const { width, height, data } = imageData;
+        const threshold = 128;
+
+        // Calculate bytes per line (must be multiple of 8)
+        const bytesPerLine = Math.ceil(width / 8);
+        const bitmapData = new Uint8Array(bytesPerLine * height);
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const idx = (y * width + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+
+                // Convert to grayscale
+                const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                // Apply threshold (inverted: 0 = white, 1 = black for thermal printer)
+                const bit = gray < threshold ? 1 : 0;
+
+                // Set bit in bitmap
+                const byteIdx = y * bytesPerLine + Math.floor(x / 8);
+                const bitIdx = 7 - (x % 8);
+                bitmapData[byteIdx] |= (bit << bitIdx);
+            }
+        }
+
+        return {
+            width: width,
+            height: height,
+            bytesPerLine: bytesPerLine,
+            data: bitmapData
+        };
+    }
+
+    /**
+     * Render table row with aligned columns
+     */
+    renderTableRow(columns, options = {}) {
+        const {
+            fontSize = 20,
+            bold = false,
+            maxWidth = 576,
+        } = options;
+
+        if (!this.ctx) return null;
+
+        const fontWeight = bold ? 'bold' : 'normal';
+        this.ctx.font = `${fontWeight} ${fontSize}px "${this.fontFamily}", serif`;
+
+        // Calculate column positions
+        const totalWidth = maxWidth - 10; // Account for padding
+        let currentX = 5;
+
+        // Create canvas
+        const height = Math.ceil(fontSize * 1.5);
+        this.canvas.width = maxWidth;
+        this.canvas.height = height;
+
+        // Clear canvas
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillRect(0, 0, maxWidth, height);
+
+        // Set text style
+        this.ctx.fillStyle = 'black';
+        this.ctx.font = `${fontWeight} ${fontSize}px "${this.fontFamily}", serif`;
+        this.ctx.textBaseline = 'top';
+
+        // Draw each column
+        columns.forEach(col => {
+            const { text, width: colWidth, align = 'left' } = col;
+            const colWidthPx = (colWidth / 100) * totalWidth;
+
+            let x = currentX;
+            const metrics = this.ctx.measureText(text);
+
+            if (align === 'center') {
+                x = currentX + (colWidthPx - metrics.width) / 2;
+            } else if (align === 'right') {
+                x = currentX + colWidthPx - metrics.width;
+            }
+
+            this.ctx.fillText(text, x, 5);
+            currentX += colWidthPx;
+        });
+
+        // Convert to monochrome bitmap
+        const imageData = this.ctx.getImageData(0, 0, maxWidth, height);
+        return this.convertToMonochrome(imageData);
+    }
+}
+
+/**
+ * ESC/POS Bitmap Printer
+ * Converts bitmap data to ESC/POS commands
+ */
+class BitmapPrinter {
+    constructor() {
+        this.parts = [];
+    }
+
+    cmd(commandArray) {
+        this.parts.push(new Uint8Array(commandArray));
+    }
+
+    /**
+     * Print bitmap using GS v 0 command
+     * @param {Object} bitmap - {width, height, bytesPerLine, data}
+     */
+    printBitmap(bitmap) {
+        if (!bitmap || !bitmap.data) {
+            console.error('[BitmapPrinter] Invalid bitmap data');
+            return;
+        }
+
+        const { width, height, bytesPerLine, data } = bitmap;
+
+        // GS v 0 command format:
+        // GS v 0 m xL xH yL yH d1...dk
+        // m = mode (0 = normal)
+        // xL, xH = width in bytes (little endian)
+        // yL, yH = height in dots (little endian)
+        // d1...dk = bitmap data
+
+        const xL = bytesPerLine & 0xFF;
+        const xH = (bytesPerLine >> 8) & 0xFF;
+        const yL = height & 0xFF;
+        const yH = (height >> 8) & 0xFF;
+
+        const header = new Uint8Array([GS, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
+        this.parts.push(header);
+        this.parts.push(data);
+    }
+
+    /**
+     * Print a line feed
+     */
+    lineFeed(count = 1) {
+        for (let i = 0; i < count; i++) {
+            this.cmd(CMD.LF);
+        }
+    }
+
+    /**
+     * Print separator line
+     */
+    printSeparator(width = 576) {
+        const bitmap = this.createSeparatorBitmap(width);
+        this.printBitmap(bitmap);
+    }
+
+    createSeparatorBitmap(width) {
+        const height = 2;
+        const bytesPerLine = Math.ceil(width / 8);
+        const data = new Uint8Array(bytesPerLine * height);
+
+        // Fill with dashes (0xFF = all black)
+        data.fill(0xFF);
+
+        return {
+            width,
+            height,
+            bytesPerLine,
+            data
+        };
+    }
+
+    /**
+     * Get final byte array
+     */
+    getBytes() {
+        const totalLength = this.parts.reduce((sum, p) => sum + p.length, 0);
+        const result = new Uint8Array(totalLength);
+        let offset = 0;
+        this.parts.forEach(p => {
+            result.set(p, offset);
+            offset += p.length;
+        });
+        return result;
+    }
+}
+
+/**
+ * Format lottery sales receipt for thermal printer with custom font
  * 
  * @param {Object} receiptData - Receipt data
  * @param {string} receiptData.username - Username
@@ -181,95 +409,116 @@ const getDescLines = (descText, maxPairs = 2) => {
  * @param {string} receiptData.timeSlot - Category time slot
  * @param {string} receiptData.categoryName - Category name
  * @param {Array} receiptData.items - Array of items
- * @param {string} receiptData.items[].productName - Product name
- * @param {string} receiptData.items[].desc - Description number
- * @param {number} receiptData.items[].qty - Quantity
- * @param {number} receiptData.items[].price - Price per unit
  * @param {string} width - Paper width '80' or '58'
- * @returns {Uint8Array} ESC/POS bytes
+ * @param {string} fontPath - Path to custom font file
+ * @returns {Promise<Uint8Array>} ESC/POS bytes
  */
-export const formatLotteryReceipt = (receiptData, width = '80') => {
+export const formatLotteryReceiptWithFont = async (receiptData, width = '80', fontPath) => {
     try {
-        // With 1-dot char spacing increase, we reduce total characters per line slightly
-        const W = width === '58' ? 29 : 44;
+        // Load custom font
+        if (fontPath) {
+            await fontManager.loadFont(fontPath);
+        }
+
+        const paperWidthMm = width === '58' ? 58 : 80;
+        const pixelWidth = paperWidthMm === 58 ? 384 : 576; // 8 dots per mm
         const items = Array.isArray(receiptData?.items) ? receiptData.items : [];
 
-        // Build receipt
-        const parts = [];
-        const cmd = (c) => parts.push(new Uint8Array(c));
-        const txt = (s) => parts.push(toBytes(s));
-        const ln = (s) => { txt(s); cmd(CMD.LF); };
+        const converter = new TextToBitmapConverter(fontManager.getFontFamily());
+        const printer = new BitmapPrinter();
 
         // Initialize printer
-        cmd(CMD.INIT);
-        // Set small character spacing as requested
-        cmd(CMD.SET_CHAR_SPACING(1));
+        printer.cmd(CMD.INIT);
 
-        // ============INVOICE============
-        cmd(CMD.ALIGN_CENTER);
-        cmd(CMD.BOLD_ON);
-        ln('============ D K ============');
-        cmd(CMD.BOLD_OFF);
+        // ============ HEADER ============
+        const headerBitmap = converter.renderText('D K', {
+            fontSize: 32,
+            bold: true,
+            maxWidth: pixelWidth,
+            align: 'center'
+        });
+        if (headerBitmap) printer.printBitmap(headerBitmap);
+        printer.lineFeed(1);
 
-        // ==================== USER INFO ====================
-        cmd(CMD.ALIGN_LEFT);
-        // User line
-        cmd(CMD.BOLD_ON); txt('User: '); cmd(CMD.BOLD_OFF); ln(str(receiptData.username));
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(1);
 
-        // Invoice number and Time/Date in ONE LINE
-        const blNoKey = 'Bill No: ';
-        const blNoVal = str(receiptData.invoiceNo);
-        const stKey = 'Time:';
-        const stVal = `${formatTime(receiptData.billTime)} - ${formatDate(receiptData.date)}`;
+        // ============ USER INFO ============
+        const userText = `User: ${str(receiptData.username)}`;
+        const userBitmap = converter.renderText(userText, {
+            fontSize: 22,
+            bold: true,
+            maxWidth: pixelWidth,
+            align: 'left'
+        });
+        if (userBitmap) printer.printBitmap(userBitmap);
+        printer.lineFeed(1);
 
-        const totalTextLen = blNoKey.length + blNoVal.length + stKey.length + stVal.length;
-        const lineSpacing = Math.max(1, W - totalTextLen);
+        // Bill number and time
+        const billNoText = `Bill No: ${str(receiptData.invoiceNo)}`;
+        const timeText = `Time: ${formatTime(receiptData.billTime)} - ${formatDate(receiptData.date)}`;
+        const billLineBitmap = converter.renderText(`${billNoText}  ${timeText}`, {
+            fontSize: 20,
+            maxWidth: pixelWidth,
+            align: 'left'
+        });
+        if (billLineBitmap) printer.printBitmap(billLineBitmap);
+        printer.lineFeed(1);
 
-        cmd(CMD.BOLD_ON); txt(blNoKey); cmd(CMD.BOLD_OFF); txt(blNoVal);
-        txt(' '.repeat(lineSpacing));
-        cmd(CMD.BOLD_ON); txt(stKey); cmd(CMD.BOLD_OFF); ln(stVal);
-
-        // Time Slot
+        // Show Time
         if (receiptData.timeSlot) {
-            cmd(CMD.BOLD_ON); txt('Show Time: '); cmd(CMD.BOLD_OFF); ln(str(receiptData.timeSlot));
+            const timeSlotBitmap = converter.renderText(`Show Time: ${str(receiptData.timeSlot)}`, {
+                fontSize: 20,
+                maxWidth: pixelWidth,
+                align: 'left'
+            });
+            if (timeSlotBitmap) printer.printBitmap(timeSlotBitmap);
+            printer.lineFeed(1);
         }
 
         // Category
         if (receiptData.categoryName) {
-            cmd(CMD.BOLD_ON); txt('Category: '); cmd(CMD.BOLD_OFF); ln(str(receiptData.categoryName));
+            const categoryBitmap = converter.renderText(`Category: ${str(receiptData.categoryName)}`, {
+                fontSize: 20,
+                maxWidth: pixelWidth,
+                align: 'left'
+            });
+            if (categoryBitmap) printer.printBitmap(categoryBitmap);
+            printer.lineFeed(1);
         }
 
-        // ==================== ITEMS TABLE ====================
-        cmd(CMD.ALIGN_LEFT);
-        ln('-'.repeat(W));
+        printer.lineFeed(1);
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(1);
 
-        // Table Header
-        // 80mm: No.(4) | Details(12) | Number(12) | Qty(4) | Rate(7) | Amount(9) total 48
-        // 58mm: No.(2) | Details(6) | Number(11) | Qty(3) | Rate(4) | Amount(6) total 32
+        // ============ TABLE HEADER ============
+        const headerColumns = [
+            { text: 'No.', width: 8, align: 'left' },
+            { text: 'Details', width: 25, align: 'left' },
+            { text: 'Number', width: 25, align: 'center' },
+            { text: 'Qty', width: 10, align: 'center' },
+            { text: 'Rate', width: 15, align: 'right' },
+            { text: 'Amount', width: 17, align: 'right' }
+        ];
 
-        cmd(CMD.BOLD_ON);
-        if (W >= 44) {
-            // 80mm (W=44): No(3) + Details(11) + Number(11) + Qty(4) + Rate(7) + Amount(8) = 44
-            const header = 'No.'.padEnd(3) + 'Details'.padEnd(11) + 'Number'.padStart(11) + 'Qty'.padStart(4) + 'Rate'.padStart(7) + 'Amount'.padStart(8);
-            ln(header);
-        } else {
-            // 58mm (W=29): No(2) + Details(5) + Number(9) + Qty(3) + Rate(4) + Amount(6) = 29
-            const header = 'No.'.padEnd(2) + 'Details'.padEnd(5) + 'Number'.padStart(9) + 'Qty'.padStart(3) + 'Rate'.padStart(4) + 'Amount'.padStart(6);
-            ln(header);
-        }
+        const headerRowBitmap = converter.renderTableRow(headerColumns, {
+            fontSize: 20,
+            bold: true,
+            maxWidth: pixelWidth
+        });
+        if (headerRowBitmap) printer.printBitmap(headerRowBitmap);
+        printer.lineFeed(1);
 
-        cmd(CMD.BOLD_OFF);
-        ln('-'.repeat(W));
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(1);
 
-        // Item rows
+        // ============ ITEMS ============
         let totalQty = 0;
         let totalPrice = 0;
 
         items.forEach((item, index) => {
-            const noWidth = W >= 48 ? 4 : 2;
-            const no = `${index + 1}.`.padEnd(noWidth);
-            const productName = str(item.productName || item.product_name || '');
-            const desc = str(item.desc || '-');
+            const productName = str(item.productName || item.product_name || '').substring(0, 15);
+            const desc = str(item.desc || '-').substring(0, 15);
             const qty = Number(item.qty) || 0;
             const price = Number(item.price) || 0;
             const lineTotal = qty * price;
@@ -277,118 +526,85 @@ export const formatLotteryReceipt = (receiptData, width = '80') => {
             totalQty += qty;
             totalPrice += lineTotal;
 
-            if (W >= 44) {
-                // 80mm paper layout: 3 | 11 | 11 | 4 | 7 | 8 = 44
-                const maxNameW = 11;
-                const maxDescW = 11;
-                const nameLines = wrapText(productName, maxNameW);
-                const descLines = getDescLines(desc);
-                const maxSubLines = Math.max(nameLines.length, descLines.length);
+            const rowColumns = [
+                { text: `${index + 1}.`, width: 8, align: 'left' },
+                { text: productName, width: 25, align: 'left' },
+                { text: desc, width: 25, align: 'center' },
+                { text: String(qty), width: 10, align: 'center' },
+                { text: price.toFixed(2), width: 15, align: 'right' },
+                { text: lineTotal.toFixed(2), width: 17, align: 'right' }
+            ];
 
-                const qtyStr = String(qty).padStart(4);
-                const rateStr = price.toFixed(2).padStart(7);
-                const amountStr = lineTotal.toFixed(2).padStart(8);
-
-                for (let i = 0; i < maxSubLines; i++) {
-                    const rowNo = i === 0 ? no : ' '.repeat(noWidth);
-                    const rowName = (nameLines[i] || '').padEnd(maxNameW);
-                    const rowDesc = (descLines[i] || '').padStart(maxDescW);
-
-                    if (i === 0) {
-                        ln(rowNo + rowName + rowDesc + qtyStr + rateStr + amountStr);
-                    } else {
-                        ln(rowNo + rowName + rowDesc);
-                    }
-                }
-            } else {
-                // 58mm paper layout: 2 | 5 | 9 | 3 | 4 | 6 = 29
-                const maxNameW = 5;
-                const maxDescW = 9;
-                const nameLines = wrapText(productName, maxNameW);
-                const descLines = getDescLines(desc);
-                const maxSubLines = Math.max(nameLines.length, descLines.length);
-
-                const qtyStr = String(qty).padStart(3);
-                const rateStr = price.toFixed(0).padStart(4);
-                const amountStr = lineTotal.toFixed(2).padStart(6);
-
-                for (let i = 0; i < maxSubLines; i++) {
-                    const rowNo = i === 0 ? no : ' '.repeat(noWidth);
-                    const rowName = (nameLines[i] || '').padEnd(maxNameW);
-                    const rowDesc = (descLines[i] || '').padStart(maxDescW);
-
-                    if (i === 0) {
-                        ln(rowNo + rowName + rowDesc + qtyStr + rateStr + amountStr);
-                    } else {
-                        ln(rowNo + rowName + rowDesc);
-                    }
-                }
-            }
+            const rowBitmap = converter.renderTableRow(rowColumns, {
+                fontSize: 18,
+                maxWidth: pixelWidth
+            });
+            if (rowBitmap) printer.printBitmap(rowBitmap);
+            printer.lineFeed(1);
         });
 
-        // ==================== TOTALS SECTION ====================
-        ln('-'.repeat(W));
+        // ============ TOTALS ============
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(1);
 
-        // Total row in table format
-        cmd(CMD.BOLD_ON);
-        if (W >= 44) {
-            const label = 'Total'.padEnd(25); // No(3)+Details(11)+Number(11)
-            const qtyStr = String(totalQty).padStart(4);
-            const amtStr = totalPrice.toFixed(2).padStart(8);
-            ln(label + qtyStr + ' '.repeat(7) + amtStr);
-        } else {
-            const label = 'Total'.padEnd(16); // No(2)+Details(5)+Number(9)
-            const qtyStr = String(totalQty).padStart(3);
-            const amtStr = totalPrice.toFixed(2).padStart(6);
-            ln(label + qtyStr + ' '.repeat(4) + amtStr);
-        }
-        cmd(CMD.BOLD_OFF);
+        const totalColumns = [
+            { text: 'Total', width: 58, align: 'left' },
+            { text: String(totalQty), width: 10, align: 'center' },
+            { text: '', width: 15, align: 'right' },
+            { text: totalPrice.toFixed(2), width: 17, align: 'right' }
+        ];
 
-        // ==================== FOOTER ====================
-        ln('-'.repeat(W));
-        cmd(CMD.ALIGN_CENTER);
-        cmd(CMD.BOLD_ON);
-        ln('** THANK YOU. VISIT AGAIN **');
-        cmd(CMD.BOLD_OFF);
+        const totalRowBitmap = converter.renderTableRow(totalColumns, {
+            fontSize: 22,
+            bold: true,
+            maxWidth: pixelWidth
+        });
+        if (totalRowBitmap) printer.printBitmap(totalRowBitmap);
+        printer.lineFeed(1);
+
+        // ============ FOOTER ============
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(2);
+
+        const footerBitmap = converter.renderText('THANK YOU - VISIT AGAIN', {
+            fontSize: 24,
+            bold: true,
+            maxWidth: pixelWidth,
+            align: 'center'
+        });
+        if (footerBitmap) printer.printBitmap(footerBitmap);
 
         // Feed and cut
-        cmd(CMD.LF);
-        cmd(CMD.LF);
-        cmd(CMD.LF);
-        cmd(CMD.CUT);
+        printer.lineFeed(3);
+        printer.cmd(CMD.CUT);
 
-        // Combine all parts
-        const totalLength = parts.reduce((sum, p) => sum + p.length, 0);
-        const result = new Uint8Array(totalLength);
-        let offset = 0;
-        parts.forEach(p => { result.set(p, offset); offset += p.length; });
-
-        console.log('[lotteryReceiptFormatter] Generated', result.length, 'bytes');
+        const result = printer.getBytes();
+        console.log('[lotteryReceiptFormatter] Generated', result.length, 'bytes with custom font');
         return result;
 
     } catch (error) {
         console.error('[lotteryReceiptFormatter] Error:', error);
         // Return minimal error message
-        const msg = 'PRINT ERROR';
-        const err = [...CMD.INIT, ...CMD.ALIGN_CENTER, ...Array.from(msg).map(c => c.charCodeAt(0)), ...CMD.LF, ...CMD.CUT];
-        return new Uint8Array(err);
+        const printer = new BitmapPrinter();
+        printer.cmd(CMD.INIT);
+        const converter = new TextToBitmapConverter();
+        const errorBitmap = converter.renderText('PRINT ERROR', {
+            fontSize: 24,
+            maxWidth: 576,
+            align: 'center'
+        });
+        if (errorBitmap) printer.printBitmap(errorBitmap);
+        printer.cmd(CMD.CUT);
+        return printer.getBytes();
     }
 };
 
 /**
- * Format multi-item sales receipt from cart items
- * 
- * @param {Object} data - Sale data
- * @param {string} data.username - Username
- * @param {string} data.invoiceNo - Invoice number
- * @param {Array} data.cartItems - Array of cart items from SalesScreen
- * @param {string} width - Paper width '80' or '58'
- * @returns {Uint8Array} ESC/POS bytes
+ * Format sales receipt with custom font
  */
-export const formatSalesReceipt = (data, width = '80') => {
+export const formatSalesReceiptWithFont = async (data, width = '80', fontPath) => {
     const now = new Date();
 
-    // Group items by category for better display
     const categories = {};
     const timeSlotsList = [];
 
@@ -399,10 +615,8 @@ export const formatSalesReceipt = (data, width = '80') => {
         }
         categories[catName].push(item);
 
-        // Handle time_slots - can be array ["12:00"] or string
         if (item.time_slots) {
             let slots = item.time_slots;
-            // Parse if it's a JSON string
             if (typeof slots === 'string') {
                 try {
                     slots = JSON.parse(slots);
@@ -410,7 +624,6 @@ export const formatSalesReceipt = (data, width = '80') => {
                     slots = [slots];
                 }
             }
-            // Add each slot to list
             if (Array.isArray(slots)) {
                 slots.forEach(s => {
                     if (s && !timeSlotsList.includes(s)) {
@@ -421,14 +634,10 @@ export const formatSalesReceipt = (data, width = '80') => {
         }
     });
 
-    // Join unique category names with commas
     const categoryNames = Object.keys(categories);
     const categoryDisplay = categoryNames.length > 0 ? categoryNames.join(', ') : null;
-
-    // Join time slots for display
     const timeSlotDisplay = timeSlotsList.length > 0 ? timeSlotsList.join(', ') : null;
 
-    // Flatten items for receipt
     const items = (data.cartItems || []).map(item => ({
         productName: item.product_name,
         desc: item.desc || '-',
@@ -436,7 +645,7 @@ export const formatSalesReceipt = (data, width = '80') => {
         price: item.price,
     }));
 
-    return formatLotteryReceipt({
+    return formatLotteryReceiptWithFont({
         username: data.username,
         invoiceNo: data.invoiceNo,
         billTime: now,
@@ -444,108 +653,92 @@ export const formatSalesReceipt = (data, width = '80') => {
         timeSlot: timeSlotDisplay || data.timeSlot || null,
         categoryName: categoryDisplay,
         items: items,
-    }, width);
+    }, width, fontPath);
 };
 
 /**
- * Format sales report for thermal printer (date-filtered report)
- * 
- * Layout:
- * ========== D K ==========
- *        Sales Report
- * From Date: DD/MM/YYYY    To Date: DD/MM/YYYY
- * ------------------------------------------
- * No  Details     Number  Qty  Rate   Amount
- * ------------------------------------------
- *     Invoice No: 1
- * 1.  Kl-10       2134     1   10.00   10.00
- * 2.  Kl-30       1134     1   30.00   30.00
- *     Invoice No: 2
- * 1.  Tl-10       2534     1   10.00   10.00
- * ------------------------------------------
- * Total                                80.00
- * ------------------------------------------
- *          ** Thank You **
- * 
- * @param {Object} reportData - Report data
- * @param {string} reportData.fromDate - Start date string
- * @param {string} reportData.toDate - End date string
- * @param {Array} reportData.salesItems - Array of sale items (from API)
- * @param {Object} reportData.summary - Summary with total_quantity, total_amount
- * @param {string} width - Paper width '80' or '58'
- * @returns {Uint8Array} ESC/POS bytes
+ * Format sales report with custom font
  */
-export const formatSalesReportReceipt = (reportData, width = '80') => {
+export const formatSalesReportReceiptWithFont = async (reportData, width = '80', fontPath) => {
     try {
-        const W = width === '58' ? 29 : 44;
+        // Load custom font
+        if (fontPath) {
+            await fontManager.loadFont(fontPath);
+        }
+
+        const paperWidthMm = width === '58' ? 58 : 80;
+        const pixelWidth = paperWidthMm === 58 ? 384 : 576;
         const salesItems = Array.isArray(reportData?.salesItems) ? reportData.salesItems : [];
 
-        const parts = [];
-        const cmd = (c) => parts.push(new Uint8Array(c));
-        const txt = (s) => parts.push(toBytes(s));
-        const ln = (s) => { txt(s); cmd(CMD.LF); };
+        const converter = new TextToBitmapConverter(fontManager.getFontFamily());
+        const printer = new BitmapPrinter();
 
         // Initialize printer
-        cmd(CMD.INIT);
-        cmd(CMD.SET_CHAR_SPACING(1));
+        printer.cmd(CMD.INIT);
 
         // ============ HEADER ============
-        cmd(CMD.ALIGN_CENTER);
-        cmd(CMD.BOLD_ON);
-        ln('========== D K ==========');
-        cmd(CMD.BOLD_OFF);
+        const headerBitmap = converter.renderText('D K', {
+            fontSize: 32,
+            bold: true,
+            maxWidth: pixelWidth,
+            align: 'center'
+        });
+        if (headerBitmap) printer.printBitmap(headerBitmap);
+        printer.lineFeed(1);
 
-        cmd(CMD.LF);
-        cmd(CMD.BOLD_ON);
-        ln('Sales Report');
-        cmd(CMD.BOLD_OFF);
-        cmd(CMD.LF);
+        const titleBitmap = converter.renderText('Sales Report', {
+            fontSize: 28,
+            bold: true,
+            maxWidth: pixelWidth,
+            align: 'center'
+        });
+        if (titleBitmap) printer.printBitmap(titleBitmap);
+        printer.lineFeed(2);
 
-        // ============ DATE RANGE ============
-        cmd(CMD.ALIGN_LEFT);
-        const fromLabel = 'From: ';
-        const fromVal = reportData.fromDate ? formatDate(reportData.fromDate) : '--';
-        const toLabel = '  To: ';
-        const toVal = reportData.toDate ? formatDate(reportData.toDate) : '--';
+        // Date range
+        const fromDate = reportData.fromDate ? formatDate(reportData.fromDate) : '--';
+        const toDate = reportData.toDate ? formatDate(reportData.toDate) : '--';
+        const dateText = `From: ${fromDate}  To: ${toDate}`;
+        const dateBitmap = converter.renderText(dateText, {
+            fontSize: 20,
+            maxWidth: pixelWidth,
+            align: 'left'
+        });
+        if (dateBitmap) printer.printBitmap(dateBitmap);
+        printer.lineFeed(2);
 
-        const dateLineLen = fromLabel.length + fromVal.length + toLabel.length + toVal.length;
-        const dateSpacing = Math.max(1, W - dateLineLen);
-
-        cmd(CMD.BOLD_ON); txt(fromLabel); cmd(CMD.BOLD_OFF); txt(fromVal);
-        txt(' '.repeat(dateSpacing));
-        cmd(CMD.BOLD_ON); txt(toLabel); cmd(CMD.BOLD_OFF); ln(toVal);
-
-        cmd(CMD.LF);
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(1);
 
         // ============ TABLE HEADER ============
-        ln('-'.repeat(W));
+        const headerColumns = [
+            { text: 'No.', width: 8, align: 'left' },
+            { text: 'Details', width: 25, align: 'left' },
+            { text: 'Number', width: 25, align: 'center' },
+            { text: 'Qty', width: 10, align: 'center' },
+            { text: 'Rate', width: 15, align: 'right' },
+            { text: 'Amount', width: 17, align: 'right' }
+        ];
 
-        cmd(CMD.BOLD_ON);
-        if (W >= 44) {
-            // 80mm: No(3) + Details(11) + Number(11) + Qty(4) + Rate(7) + Amount(8) = 44
-            const header = 'No.'.padEnd(3) + 'Details'.padEnd(11) + 'Number'.padStart(11) + 'Qty'.padStart(4) + 'Rate'.padStart(7) + 'Amount'.padStart(8);
-            ln(header);
-        } else {
-            // 58mm: No(2) + Details(5) + Number(9) + Qty(3) + Rate(4) + Amount(6) = 29
-            const header = 'No'.padEnd(2) + 'Detl'.padEnd(5) + 'Number'.padStart(9) + 'Qty'.padStart(3) + 'Rate'.padStart(4) + 'Amt'.padStart(6);
-            ln(header);
-        }
-        cmd(CMD.BOLD_OFF);
-        ln('-'.repeat(W));
+        const headerRowBitmap = converter.renderTableRow(headerColumns, {
+            fontSize: 20,
+            bold: true,
+            maxWidth: pixelWidth
+        });
+        if (headerRowBitmap) printer.printBitmap(headerRowBitmap);
+        printer.lineFeed(1);
 
-        // ============ GROUP BY INVOICE ============
-        // Group items by invoice_number
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(1);
+
+        // Group by invoice
         const invoiceGroups = {};
-        const noInvoiceItems = [];
-
         salesItems.forEach(item => {
             if (item.invoice_number) {
                 if (!invoiceGroups[item.invoice_number]) {
                     invoiceGroups[item.invoice_number] = [];
                 }
                 invoiceGroups[item.invoice_number].push(item);
-            } else {
-                noInvoiceItems.push(item);
             }
         });
 
@@ -558,19 +751,20 @@ export const formatSalesReportReceipt = (reportData, width = '80') => {
         invoiceNumbers.forEach(invoiceNo => {
             const items = invoiceGroups[invoiceNo];
 
-            // Invoice header line
-            cmd(CMD.BOLD_ON);
-            if (W >= 44) {
-                ln('   Invoice No: ' + invoiceNo);
-            } else {
-                ln(' Inv: ' + invoiceNo);
-            }
-            cmd(CMD.BOLD_OFF);
+            // Invoice header
+            const invHeaderBitmap = converter.renderText(`Invoice No: ${invoiceNo}`, {
+                fontSize: 20,
+                bold: true,
+                maxWidth: pixelWidth,
+                align: 'left'
+            });
+            if (invHeaderBitmap) printer.printBitmap(invHeaderBitmap);
+            printer.lineFeed(1);
 
-            // Print items within this invoice
+            // Print items
             items.forEach((item, index) => {
-                const productName = str(item.product_name || item.product_code || '');
-                const descNum = str(item.desc || '-');
+                const productName = str(item.product_name || '').substring(0, 15);
+                const desc = str(item.desc || '-').substring(0, 15);
                 const qty = Number(item.qty) || 0;
                 const rate = Number(item.unit_price) || 0;
                 const amount = Number(item.total) || (qty * rate);
@@ -578,152 +772,81 @@ export const formatSalesReportReceipt = (reportData, width = '80') => {
                 grandTotalQty += qty;
                 grandTotalAmount += amount;
 
-                if (W >= 44) {
-                    // 80mm layout: No(3) + Details(11) + Number(11) + Qty(4) + Rate(7) + Amount(8) = 44
-                    const no = `${index + 1}.`.padEnd(3);
-                    const nameLines = wrapText(productName, 11);
-                    const descLines = getDescLines(descNum);
-                    const maxSubLines = Math.max(nameLines.length, descLines.length);
+                const rowColumns = [
+                    { text: `${index + 1}.`, width: 8, align: 'left' },
+                    { text: productName, width: 25, align: 'left' },
+                    { text: desc, width: 25, align: 'center' },
+                    { text: String(qty), width: 10, align: 'center' },
+                    { text: rate.toFixed(2), width: 15, align: 'right' },
+                    { text: amount.toFixed(2), width: 17, align: 'right' }
+                ];
 
-                    const qtyStr = String(qty).padStart(4);
-                    const rateStr = rate.toFixed(2).padStart(7);
-                    const amountStr = amount.toFixed(2).padStart(8);
-
-                    for (let i = 0; i < maxSubLines; i++) {
-                        const rowNo = i === 0 ? no : '   ';
-                        const rowName = (nameLines[i] || '').padEnd(11);
-                        const rowDesc = (descLines[i] || '').padStart(11);
-
-                        if (i === 0) {
-                            ln(rowNo + rowName + rowDesc + qtyStr + rateStr + amountStr);
-                        } else {
-                            ln(rowNo + rowName + rowDesc);
-                        }
-                    }
-                } else {
-                    // 58mm layout: No(2) + Details(5) + Number(9) + Qty(3) + Rate(4) + Amount(6) = 29
-                    const no = `${index + 1}.`.padEnd(2);
-                    const nameLines = wrapText(productName, 5);
-                    const descLines = getDescLines(descNum);
-                    const maxSubLines = Math.max(nameLines.length, descLines.length);
-
-                    const qtyStr = String(qty).padStart(3);
-                    const rateStr = rate.toFixed(0).padStart(4);
-                    const amountStr = amount.toFixed(2).padStart(6);
-
-                    for (let i = 0; i < maxSubLines; i++) {
-                        const rowNo = i === 0 ? no : '  ';
-                        const rowName = (nameLines[i] || '').padEnd(5);
-                        const rowDesc = (descLines[i] || '').padStart(9);
-
-                        if (i === 0) {
-                            ln(rowNo + rowName + rowDesc + qtyStr + rateStr + amountStr);
-                        } else {
-                            ln(rowNo + rowName + rowDesc);
-                        }
-                    }
-                }
+                const rowBitmap = converter.renderTableRow(rowColumns, {
+                    fontSize: 18,
+                    maxWidth: pixelWidth
+                });
+                if (rowBitmap) printer.printBitmap(rowBitmap);
+                printer.lineFeed(1);
             });
+
+            printer.lineFeed(1);
         });
 
-        // Print items without invoice number (if any)
-        if (noInvoiceItems.length > 0) {
-            cmd(CMD.BOLD_ON);
-            if (W >= 44) {
-                ln('   Other Sales');
-            } else {
-                ln(' Other');
-            }
-            cmd(CMD.BOLD_OFF);
-
-            noInvoiceItems.forEach((item, index) => {
-                const productName = str(item.product_name || item.product_code || '');
-                const descNum = str(item.desc || '-');
-                const qty = Number(item.qty) || 0;
-                const rate = Number(item.unit_price) || 0;
-                const amount = Number(item.total) || (qty * rate);
-
-                grandTotalQty += qty;
-                grandTotalAmount += amount;
-
-                if (W >= 44) {
-                    const no = `${index + 1}.`.padEnd(3);
-                    const nameTrunc = productName.substring(0, 11).padEnd(11);
-                    const descTrunc = descNum.substring(0, 11).padStart(11);
-                    const qtyStr = String(qty).padStart(4);
-                    const rateStr = rate.toFixed(2).padStart(7);
-                    const amountStr = amount.toFixed(2).padStart(8);
-                    ln(no + nameTrunc + descTrunc + qtyStr + rateStr + amountStr);
-                } else {
-                    const no = `${index + 1}.`.padEnd(2);
-                    const nameTrunc = productName.substring(0, 5).padEnd(5);
-                    const descTrunc = descNum.substring(0, 9).padStart(9);
-                    const qtyStr = String(qty).padStart(3);
-                    const rateStr = rate.toFixed(0).padStart(4);
-                    const amountStr = amount.toFixed(2).padStart(6);
-                    ln(no + nameTrunc + descTrunc + qtyStr + rateStr + amountStr);
-                }
-            });
-        }
-
         // ============ TOTALS ============
-        ln('-'.repeat(W));
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(1);
 
-        // Use summary if provided, otherwise use calculated totals
-        const totalQty = reportData.summary?.total_quantity || grandTotalQty;
         const totalAmount = reportData.summary?.total_amount || grandTotalAmount;
+        const totalQty = reportData.summary?.total_quantity || grandTotalQty;
 
-        cmd(CMD.BOLD_ON);
-        if (W >= 44) {
-            const label = 'Total'.padEnd(25); // No(3)+Details(11)+Number(11)
-            const qtyStr = String(totalQty).padStart(4);
-            const amtStr = totalAmount.toFixed(2).padStart(8);
-            ln(label + qtyStr + ' '.repeat(7) + amtStr);
-        } else {
-            const label = 'Total'.padEnd(16); // No(2)+Details(5)+Number(9)
-            const qtyStr = String(totalQty).padStart(3);
-            const amtStr = totalAmount.toFixed(2).padStart(6);
-            ln(label + qtyStr + ' '.repeat(4) + amtStr);
-        }
-        cmd(CMD.BOLD_OFF);
+        const totalColumns = [
+            { text: 'Total', width: 58, align: 'left' },
+            { text: String(totalQty), width: 10, align: 'center' },
+            { text: '', width: 15, align: 'right' },
+            { text: totalAmount.toFixed(2), width: 17, align: 'right' }
+        ];
 
-        // ============ FOOTER ============
-        ln('-'.repeat(W));
-        cmd(CMD.ALIGN_CENTER);
-        cmd(CMD.BOLD_ON);
-        ln('** Thank You **');
-        cmd(CMD.BOLD_OFF);
+        const totalRowBitmap = converter.renderTableRow(totalColumns, {
+            fontSize: 22,
+            bold: true,
+            maxWidth: pixelWidth
+        });
+        if (totalRowBitmap) printer.printBitmap(totalRowBitmap);
+        printer.lineFeed(1);
 
-        // Feed and cut
-        cmd(CMD.LF);
-        cmd(CMD.LF);
-        cmd(CMD.LF);
-        cmd(CMD.CUT);
+        printer.printSeparator(pixelWidth);
+        printer.lineFeed(2);
 
-        // Combine all parts
-        const totalLength = parts.reduce((sum, p) => sum + p.length, 0);
-        const result = new Uint8Array(totalLength);
-        let offset = 0;
-        parts.forEach(p => { result.set(p, offset); offset += p.length; });
+        // Footer
+        const footerBitmap = converter.renderText('Thank You', {
+            fontSize: 24,
+            bold: true,
+            maxWidth: pixelWidth,
+            align: 'center'
+        });
+        if (footerBitmap) printer.printBitmap(footerBitmap);
 
-        console.log('[salesReportFormatter] Generated', result.length, 'bytes');
+        printer.lineFeed(3);
+        printer.cmd(CMD.CUT);
+
+        const result = printer.getBytes();
+        console.log('[salesReportFormatter] Generated', result.length, 'bytes with custom font');
         return result;
 
     } catch (error) {
         console.error('[salesReportFormatter] Error:', error);
-        const msg = 'PRINT ERROR';
-        const err = [...CMD.INIT, ...CMD.ALIGN_CENTER, ...Array.from(msg).map(c => c.charCodeAt(0)), ...CMD.LF, ...CMD.CUT];
-        return new Uint8Array(err);
+        const printer = new BitmapPrinter();
+        printer.cmd(CMD.INIT);
+        printer.cmd(CMD.CUT);
+        return printer.getBytes();
     }
 };
 
-export const bytesToHex = (bytes, limit = 200) => {
-    return Array.from(bytes.slice(0, limit)).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-};
-
 export default {
-    formatLotteryReceipt,
-    formatSalesReceipt,
-    formatSalesReportReceipt,
-    bytesToHex,
+    formatLotteryReceiptWithFont,
+    formatSalesReceiptWithFont,
+    formatSalesReportReceiptWithFont,
+    FontManager,
+    TextToBitmapConverter,
+    BitmapPrinter,
 };

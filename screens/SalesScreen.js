@@ -982,6 +982,7 @@ const SalesScreen = ({ navigation }) => {
                                                     placeholder="Enter lottery number"
                                                     value={desc}
                                                     onChangeText={setDesc}
+                                                    keyboardType="phone-pad"
                                                     placeholderTextColor="#999"
                                                     multiline
                                                     numberOfLines={3}
