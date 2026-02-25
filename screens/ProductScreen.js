@@ -18,60 +18,140 @@ import { productService } from '../services/productService';
 import { categoryService } from '../services/categoryService';
 import { authService } from '../services';
 
-// Memoized Product List Item for better performance
-const ProductListItem = memo(({ product, onEdit, onDelete, canEdit, canDelete }) => (
-    <View style={styles.productCard}>
-        <View style={styles.productIconContainer}>
-            <View style={styles.productIconCircle}>
-                <Text style={styles.productInitial}>{product.product_name.charAt(0).toUpperCase()}</Text>
-            </View>
-        </View>
-        <View style={styles.productInfo}>
-            <Text style={styles.productName}>{product.product_name}</Text>
-            <View style={styles.metaRow}>
-                <View style={[styles.badge, styles.priceBadge]}>
-                    <Text style={styles.priceText}>₹{product.price}</Text>
+// ─── Digit Type Config ────────────────────────────────────────────────────────
+// For each digit_type we know which prize levels exist (from 1 up to digit_type)
+const DIGIT_OPTIONS = [
+    { label: '1 Digit', value: 1 },
+    { label: '2 Digit', value: 2 },
+    { label: '3 Digit', value: 3 },
+    { label: '4 Digit', value: 4 },
+];
+
+/** Returns badge label for a prize level (e.g. level 4 → "4-Digit Prize") */
+const getPrizeLevelLabel = (level) => {
+    const suffix = level === 1 ? '1-Digit' : `${level}-Digit`;
+    return suffix;
+};
+
+/** Color per digit level */
+const LEVEL_COLORS = {
+    4: '#3a48c2',
+    3: '#7c3aed',
+    2: '#0891b2',
+    1: '#059669',
+};
+
+// ─── Memoised Product List Item ───────────────────────────────────────────────
+const ProductListItem = memo(({ product, onEdit, onDelete, canEdit, canDelete }) => {
+    const digitType = product.digit_type;
+    let winningAmounts = product.winning_amounts;
+    while (typeof winningAmounts === 'string') {
+        try {
+            winningAmounts = JSON.parse(winningAmounts);
+        } catch (e) {
+            winningAmounts = null;
+            break;
+        }
+    }
+
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    // Filter out invalid/empty amounts and sort levels descending
+    const validPrizeLevels = winningAmounts
+        ? Object.keys(winningAmounts)
+            .filter(level => winningAmounts[level] !== null && winningAmounts[level] !== undefined && winningAmounts[level] !== '')
+            .sort((a, b) => Number(b) - Number(a))
+        : [];
+
+    return (
+        <View style={styles.productCard}>
+            <View style={styles.productIconContainer}>
+                <View style={styles.productIconCircle}>
+                    <Text style={styles.productInitial}>{product.product_name.charAt(0).toUpperCase()}</Text>
                 </View>
-                {product.box === 1 && (
-                    <View style={[styles.badge, styles.boxBadge]}>
-                        <MaterialCommunityIcons name="package-variant-closed" size={12} color="#854d0e" />
-                        <Text style={styles.boxText}>Box</Text>
-                    </View>
-                )}
-                {product.index_type && (
-                    <View style={[styles.badge, styles.indexBadge]}>
-                        <MaterialCommunityIcons name="alpha-a-box-outline" size={12} color="#7c3aed" />
-                        <Text style={styles.indexText}>{product.index_type}</Text>
-                    </View>
-                )}
             </View>
-            {product.category_name && (
-                <Text style={styles.categoryLabel}>{product.category_name}</Text>
+            <View style={styles.productInfo}>
+                <View style={{ flexDirection: 'row' }}>
+                    <Text style={styles.categoryLabel}>{product.category_name}</Text>
+                    <Text style={styles.productName}>▸ {product.product_name}</Text>
+                </View>
+                <View style={styles.metaRow}>
+                    <View style={[styles.badge, styles.priceBadge]}>
+                        <Text style={styles.priceText}>₹{product.price}</Text>
+                    </View>
+                    {product.box === 1 && (
+                        <View style={[styles.badge, styles.boxBadge]}>
+                            <MaterialCommunityIcons name="package-variant-closed" size={12} color="#854d0e" />
+                            <Text style={styles.boxText}>Box</Text>
+                        </View>
+                    )}
+                    {product.index_type && (
+                        <View style={[styles.badge, styles.indexBadge]}>
+                            <MaterialCommunityIcons name="alpha-a-box-outline" size={12} color="#7c3aed" />
+                            <Text style={styles.indexText}>{product.index_type}</Text>
+                        </View>
+                    )}
+                </View>
+
+                {/* Winning Amounts Row (Collapsible) */}
+                {isExpanded && digitType && validPrizeLevels.length > 0 && (
+                    <View style={styles.prizeDetailsContainer}>
+                        {validPrizeLevels.map((level) => {
+                            const amt = winningAmounts[level];
+                            return (
+                                <View key={level} style={styles.prizeDetailRow}>
+                                    <Text style={styles.prizeDetailLabel}>
+                                        {level}-Digit &nbsp;: &nbsp;
+                                    </Text>
+                                    <Text style={styles.prizeDetailAmt}>
+                                        ₹{amt}
+                                    </Text>
+                                </View>
+                            );
+                        })}
+                    </View>
+                )}
+
+            </View>
+            {(canEdit || canDelete || (digitType && validPrizeLevels.length > 0)) && (
+                <View style={styles.actionsContainer}>
+                    {/* Expand Toggle icon next to delete */}
+                    {digitType && validPrizeLevels.length > 0 && (
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => setIsExpanded(!isExpanded)}
+                            activeOpacity={0.6}
+                        >
+                            <MaterialCommunityIcons
+                                name={isExpanded ? "eye-off-outline" : "eye-outline"}
+                                size={20}
+                                color="#3a48c2"
+                            />
+                        </TouchableOpacity>
+                    )}
+                    {canEdit && (
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => onEdit(product)}
+                        >
+                            <MaterialCommunityIcons name="pencil-outline" size={20} color="#3a48c2" />
+                        </TouchableOpacity>
+                    )}
+                    {canDelete && (
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => onDelete(product.id, product.product_name)}
+                        >
+                            <MaterialCommunityIcons name="delete-outline" size={20} color="#FF5252" />
+                        </TouchableOpacity>
+                    )}
+                </View>
             )}
         </View>
-        {(canEdit || canDelete) && (
-            <View style={styles.actionsContainer}>
-                {canEdit && (
-                    <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={() => onEdit(product)}
-                    >
-                        <MaterialCommunityIcons name="pencil-outline" size={24} color="#3a48c2" />
-                    </TouchableOpacity>
-                )}
-                {canDelete && (
-                    <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={() => onDelete(product.id, product.product_name)}
-                    >
-                        <MaterialCommunityIcons name="delete-outline" size={24} color="#FF5252" />
-                    </TouchableOpacity>
-                )}
-            </View>
-        )}
-    </View>
-));
+    );
+});
 
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 const ProductScreen = ({ navigation }) => {
     const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -92,12 +172,15 @@ const ProductScreen = ({ navigation }) => {
     const [productName, setProductName] = useState('');
     const [productCode, setProductCode] = useState('');
     const [price, setPrice] = useState('');
-    const [box, setBox] = useState(0); // 0 = No, 1 = Yes
-    const [indexType, setIndexType] = useState(null); // null, A, B, C, AB, BC, AC
+    const [box, setBox] = useState(0);
+    const [indexType, setIndexType] = useState(null);
+    const [digitType, setDigitType] = useState(null); // 1 | 2 | 3 | 4 | null
+    const [winningAmounts, setWinningAmounts] = useState({}); // { "1": "", "2": "", "3": "", "4": "" }
     const [editingProduct, setEditingProduct] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isFocus, setIsFocus] = useState(false);
     const [isIndexFocus, setIsIndexFocus] = useState(false);
+    const [isDigitFocus, setIsDigitFocus] = useState(false);
     const [isCodeAutoSynced, setIsCodeAutoSynced] = useState(true);
 
     // Static index type options
@@ -141,7 +224,6 @@ const ProductScreen = ({ navigation }) => {
                 setProducts(productsRes.data.products || []);
             }
             if (categoriesRes && categoriesRes.data) {
-                // Map categories for dropdown
                 const cats = (categoriesRes.data.categories || []).map(cat => ({
                     label: cat.category_name,
                     value: cat.id
@@ -166,13 +248,89 @@ const ProductScreen = ({ navigation }) => {
         fetchData();
     }, [fetchData]);
 
+    // ─── Derive digit type from index type ─────────────────────────
+    // Single letter (A,B,C) → digit_type = 1, one prize input
+    // Double letter (AB,BC,AC) → digit_type = 2, one prize input
+    // None → user picks digit_type 1-4, multiple prize inputs per level
+    const getAutoDigitType = (idxType) => {
+        if (!idxType) return null; // None → manual
+        if (idxType.length === 1) return 1; // A,B,C → 1 digit
+        if (idxType.length === 2) return 2; // AB,BC,AC → 2 digits
+        return null;
+    };
+
+    const isIndexBased = indexType && indexType.length >= 1; // true when A/B/C/AB/BC/AC
+
+    const handleIndexTypeChange = (value) => {
+        setIndexType(value);
+        const autoDT = getAutoDigitType(value);
+        if (autoDT !== null) {
+            // Index-based: auto-set digit type, single prize input stored under key = digit_type
+            setDigitType(autoDT);
+            setWinningAmounts(prev => ({
+                [String(autoDT)]: prev[String(autoDT)] || ''
+            }));
+        } else {
+            // None: reset digit type and let user choose
+            setDigitType(null);
+            setWinningAmounts({});
+        }
+    };
+
+    // ─── When digit type changes manually (only for None index) ─────────────
+    const handleDigitTypeChange = (value) => {
+        setDigitType(value);
+        if (value === null) {
+            setWinningAmounts({});
+            return;
+        }
+        // Preserve previously entered amounts where applicable
+        setWinningAmounts(prev => {
+            const next = {};
+            for (let i = 1; i <= value; i++) {
+                next[String(i)] = prev[String(i)] || '';
+            }
+            return next;
+        });
+    };
+
     const handleEdit = useCallback((product) => {
         setCategoryId(product.category_id);
         setProductName(product.product_name);
         setProductCode(product.product_code);
         setPrice(product.price.toString());
         setBox(product.box || 0);
-        setIndexType(product.index_type || null);
+        const idxType = product.index_type || null;
+        setIndexType(idxType);
+        const dt = product.digit_type || null;
+        setDigitType(dt);
+        let wAmts = product.winning_amounts;
+        while (typeof wAmts === 'string') {
+            try { wAmts = JSON.parse(wAmts); } catch (e) { wAmts = null; break; }
+        }
+
+        if (dt && wAmts) {
+            const isIdxBased = idxType && idxType.length >= 1;
+            if (isIdxBased) {
+                // Index-based: single prize stored under key = digit_type
+                setWinningAmounts({
+                    [String(dt)]: wAmts[String(dt)] !== undefined
+                        ? String(wAmts[String(dt)])
+                        : ''
+                });
+            } else {
+                // Manual: multiple levels
+                const wa = {};
+                for (let i = 1; i <= dt; i++) {
+                    wa[String(i)] = wAmts[String(i)] !== undefined
+                        ? String(wAmts[String(i)])
+                        : '';
+                }
+                setWinningAmounts(wa);
+            }
+        } else {
+            setWinningAmounts({});
+        }
         setEditingProduct(product);
         setIsCodeAutoSynced(false);
         setShowAddModal(true);
@@ -185,6 +343,8 @@ const ProductScreen = ({ navigation }) => {
         setPrice('');
         setBox(0);
         setIndexType(null);
+        setDigitType(null);
+        setWinningAmounts({});
         setEditingProduct(null);
         setIsCodeAutoSynced(true);
     };
@@ -217,15 +377,61 @@ const ProductScreen = ({ navigation }) => {
             return;
         }
 
+        // Validate winning amounts when digit type is selected
+        if (digitType) {
+            if (isIndexBased) {
+                // Index-based: single prize at key = digitType
+                const amt = winningAmounts[String(digitType)];
+                if (amt === undefined || amt === null || String(amt).trim() === '') {
+                    Alert.alert('Validation Error', 'Please enter the prize amount');
+                    return;
+                }
+                if (isNaN(parseFloat(amt)) || parseFloat(amt) < 0) {
+                    Alert.alert('Validation Error', 'Prize amount must be a valid positive number');
+                    return;
+                }
+            } else {
+                // Manual: validate all levels 1..digitType
+                for (let i = 1; i <= digitType; i++) {
+                    const amt = winningAmounts[String(i)];
+                    if (amt === undefined || amt === null || String(amt).trim() === '') {
+                        Alert.alert('Validation Error', `Please enter winning amount for ${i}-Digit Match`);
+                        return;
+                    }
+                    if (isNaN(parseFloat(amt)) || parseFloat(amt) < 0) {
+                        Alert.alert('Validation Error', `Winning amount for ${i}-Digit Match must be a valid positive number`);
+                        return;
+                    }
+                }
+            }
+        }
+
         setIsSubmitting(true);
         try {
+            // Build winning amounts payload (only numbers)
+            let parsedWinningAmounts = null;
+            if (digitType) {
+                parsedWinningAmounts = {};
+                if (isIndexBased) {
+                    // Index-based: store single prize at key = digitType
+                    parsedWinningAmounts[String(digitType)] = parseFloat(winningAmounts[String(digitType)]);
+                } else {
+                    // Manual: store all levels
+                    for (let i = 1; i <= digitType; i++) {
+                        parsedWinningAmounts[String(i)] = parseFloat(winningAmounts[String(i)]);
+                    }
+                }
+            }
+
             const productData = {
                 category_id: categoryId,
                 product_name: productName.trim(),
                 product_code: productCode.trim(),
                 price: parseFloat(price),
                 box: box,
-                index_type: indexType
+                index_type: indexType,
+                digit_type: digitType,
+                winning_amounts: parsedWinningAmounts
             };
 
             if (editingProduct) {
@@ -288,7 +494,6 @@ const ProductScreen = ({ navigation }) => {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
-                {/* Decorative Elements */}
                 <View style={styles.decorativeCircle1} />
                 <View style={styles.decorativeCircle2} />
 
@@ -298,12 +503,9 @@ const ProductScreen = ({ navigation }) => {
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Products</Text>
                     {permissions.add ? (
-                        <TouchableOpacity
-                            onPress={toggleModal}
-                            style={styles.addButton}
-                        >
+                        <TouchableOpacity onPress={toggleModal} style={styles.addButton}>
                             <MaterialCommunityIcons
-                                name={showAddModal ? "close" : "plus"}
+                                name={showAddModal ? 'close' : 'plus'}
                                 size={28}
                                 color="#fff"
                             />
@@ -320,7 +522,7 @@ const ProductScreen = ({ navigation }) => {
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3a48c2" />
                 }
             >
-                {/* Add Product Form */}
+                {/* ── Add/Edit Product Form ── */}
                 {showAddModal && (
                     <View style={styles.addFormContainer}>
                         <Text style={styles.formTitle}>{editingProduct ? 'Edit Product' : 'Create New Product'}</Text>
@@ -393,7 +595,7 @@ const ProductScreen = ({ navigation }) => {
                             />
                         </View>
 
-                        {/* Box Selection (Yes/No) */}
+                        {/* Box Selection */}
                         <TouchableOpacity
                             style={styles.checkboxContainer}
                             onPress={() => setBox(box === 1 ? 0 : 1)}
@@ -421,11 +623,85 @@ const ProductScreen = ({ navigation }) => {
                                 onFocus={() => setIsIndexFocus(true)}
                                 onBlur={() => setIsIndexFocus(false)}
                                 onChange={item => {
-                                    setIndexType(item.value);
+                                    handleIndexTypeChange(item.value);
                                     setIsIndexFocus(false);
                                 }}
                             />
                         </View>
+
+                        {/* ── Digit Type Dropdown (only shown when index_type is None) ── */}
+                        {!isIndexBased && (
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Digit Type</Text>
+                                <Dropdown
+                                    style={[styles.dropdown, isDigitFocus && { borderColor: '#3a48c2' }]}
+                                    placeholderStyle={styles.placeholderStyle}
+                                    selectedTextStyle={styles.selectedTextStyle}
+                                    data={DIGIT_OPTIONS}
+                                    maxHeight={300}
+                                    labelField="label"
+                                    valueField="value"
+                                    placeholder={!isDigitFocus ? 'Select Digit Type' : '...'}
+                                    value={digitType}
+                                    onFocus={() => setIsDigitFocus(true)}
+                                    onBlur={() => setIsDigitFocus(false)}
+                                    onChange={item => {
+                                        handleDigitTypeChange(item.value);
+                                        setIsDigitFocus(false);
+                                    }}
+                                />
+                            </View>
+                        )}
+
+                        {/* Prize Amount Input — index-based: single input */}
+                        {isIndexBased && digitType !== null && (
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Prize Amount (₹) *</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder={`Enter ${digitType}-Digit match prize`}
+                                    value={winningAmounts[String(digitType)] || ''}
+                                    onChangeText={(text) => {
+                                        setWinningAmounts({ [String(digitType)]: text });
+                                    }}
+                                    placeholderTextColor="#999"
+                                    keyboardType="numeric"
+                                />
+                            </View>
+                        )}
+
+                        {/* Prize Amount Inputs — manual: multiple inputs per level */}
+                        {!isIndexBased && digitType !== null && (
+                            <View style={styles.winningAmountsContainer}>
+                                <Text style={styles.label}>Prize Amounts (₹) *</Text>
+                                {/* Render from highest to lowest: digitType down to 1 */}
+                                {Array.from({ length: digitType }, (_, idx) => {
+                                    const level = digitType - idx; // e.g. 4, 3, 2, 1
+                                    return (
+                                        <View key={level} style={styles.winningAmountRow}>
+                                            <View style={styles.winningLevelBadge}>
+                                                <Text style={styles.winningLevelBadgeText}>
+                                                    {getPrizeLevelLabel(level)}
+                                                </Text>
+                                            </View>
+                                            <TextInput
+                                                style={styles.winningAmountInput}
+                                                placeholder="Enter amount"
+                                                value={winningAmounts[String(level)] || ''}
+                                                onChangeText={(text) => {
+                                                    setWinningAmounts(prev => ({
+                                                        ...prev,
+                                                        [String(level)]: text
+                                                    }));
+                                                }}
+                                                placeholderTextColor="#999"
+                                                keyboardType="numeric"
+                                            />
+                                        </View>
+                                    );
+                                })}
+                            </View>
+                        )}
 
                         {/* Submit Button */}
                         <TouchableOpacity
@@ -470,6 +746,7 @@ const ProductScreen = ({ navigation }) => {
     );
 };
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -639,6 +916,39 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#1a1a1a',
     },
+
+    // ── Winning Amounts ──
+    winningAmountsContainer: {
+        marginBottom: 20,
+    },
+    winningAmountRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 10,
+        backgroundColor: '#F5F7FA',
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+    },
+    winningLevelBadge: {
+        width: 100,
+        marginRight: 10,
+    },
+    winningLevelBadgeText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333',
+    },
+    winningAmountInput: {
+        flex: 1,
+        fontSize: 15,
+        color: '#1a1a1a',
+        padding: 0,
+    },
+
+    // ── Product List Styles ──
     productsContainer: {
         padding: 20,
     },
@@ -674,10 +984,11 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05,
         shadowRadius: 8,
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
     },
     productIconContainer: {
         marginRight: 15,
+        marginTop: 2,
     },
     productIconCircle: {
         width: 50,
@@ -705,8 +1016,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: 8,
-        marginBottom: 4,
+        gap: 6,
+        marginBottom: 6,
     },
     badge: {
         flexDirection: 'row',
@@ -716,11 +1027,6 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
         borderRadius: 8,
         gap: 4,
-    },
-    badgeText: {
-        fontSize: 12,
-        color: '#555',
-        fontWeight: '600',
     },
     priceBadge: {
         backgroundColor: '#DCFCE7',
@@ -746,18 +1052,62 @@ const styles = StyleSheet.create({
         color: '#7c3aed',
         fontWeight: 'bold',
     },
+    // ── Toggle Details Button ──
+    expandToggle: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 6,
+        marginBottom: 6,
+        alignSelf: 'flex-start',
+    },
+    expandToggleText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#3a48c2',
+    },
+
+    // ── Prize Details List (Card) ──
+    prizeDetailsContainer: {
+        marginBottom: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    prizeDetailRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 6,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F3F4F6',
+    },
+    prizeDetailLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#4B5563',
+    },
+    prizeDetailAmt: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#111827',
+    },
+
     categoryLabel: {
         fontSize: 12,
-        fontWeight: '600',
+        fontWeight: 'bold',
         color: '#000000ff',
         marginTop: 2,
+    },
+    rightActionsColumn: {
+        flexDirection: 'column',
+        alignItems: 'center',
     },
     actionsContainer: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     actionButton: {
-        padding: 10,
+        padding: 7,
     },
 });
 

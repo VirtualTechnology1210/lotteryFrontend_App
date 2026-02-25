@@ -131,6 +131,11 @@ const ProductItem = memo(({ product, onSelect }) => {
                             <Text style={styles.productItemBadgeText}>Box</Text>
                         </View>
                     )}
+                    {product.index_type && (
+                        <View style={[styles.productItemBadge, { backgroundColor: '#7c3aed' }]}>
+                            <Text style={styles.productItemBadgeText}>{product.index_type}</Text>
+                        </View>
+                    )}
                 </View>
                 <Text style={styles.productItemCode}>{product.product_code}</Text>
             </View>
@@ -143,36 +148,39 @@ const ProductItem = memo(({ product, onSelect }) => {
 });
 
 // Cart Item Component
-const CartItem = memo(({ item, index, onUpdateQty, onRemove }) => {
+const CartItem = memo(({ item, index, onRemove, onEditDesc }) => {
     return (
         <View style={styles.cartItem}>
-            <View style={styles.cartItemInfo}>
-                <Text style={styles.cartItemName} numberOfLines={1}>{item.product_name}</Text>
-                <Text style={styles.cartItemPrice}>₹{Math.round(item.price)} × {item.qty}</Text>
-            </View>
-            <View style={styles.cartItemActions}>
-                <View style={styles.qtyControlMini}>
-                    <TouchableOpacity
-                        style={styles.qtyBtnMini}
-                        onPress={() => onUpdateQty(index, Math.max(1, item.qty - 1))}
-                    >
-                        <MaterialCommunityIcons name="minus" size={16} color="#3a48c2" />
-                    </TouchableOpacity>
-                    <Text style={styles.qtyTextMini}>{item.qty}</Text>
-                    <TouchableOpacity
-                        style={styles.qtyBtnMini}
-                        onPress={() => onUpdateQty(index, item.qty + 1)}
-                    >
-                        <MaterialCommunityIcons name="plus" size={16} color="#3a48c2" />
-                    </TouchableOpacity>
+            <View style={styles.cartItemTopRow}>
+                <View style={styles.cartItemInfo}>
+                    <Text style={styles.cartItemName} numberOfLines={1}>
+                        {item.product_name}
+                        {item.box === 1 && <Text style={styles.boxLabel}> [Box{item.index_type ? `-${item.index_type}` : ''}]</Text>}
+                        {!item.box && item.index_type && <Text style={[styles.boxLabel, { color: '#7c3aed' }]}> [{item.index_type}]</Text>}
+                    </Text>
+                    <Text style={styles.cartItemPrice}>₹{Math.round(item.price)} × {item.qty}</Text>
                 </View>
                 <Text style={styles.cartItemTotal}>₹{Math.round(item.price * item.qty)}</Text>
-                <TouchableOpacity
-                    style={styles.removeBtn}
-                    onPress={() => onRemove(index)}
-                >
-                    <MaterialCommunityIcons name="delete-outline" size={20} color="#dc2626" />
-                </TouchableOpacity>
+            </View>
+            <View style={styles.cartItemBottomRow}>
+                <View style={styles.cartItemDescWrapper}>
+                    {item.desc ? (
+                        <Text style={styles.cartItemDescText} numberOfLines={3}>
+                            <Text style={{ color: '#888' }}>Lottery No: </Text>
+                            {item.desc}
+                        </Text>
+                    ) : (
+                        <Text style={styles.cartItemPrice}>Qty: {item.qty}</Text>
+                    )}
+                </View>
+                <View style={styles.cartItemActions}>
+                    <TouchableOpacity style={styles.actionBtnEdit} onPress={() => onEditDesc(index)}>
+                        <MaterialCommunityIcons name="pencil-outline" size={16} color="#3a48c2" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionBtnRemove} onPress={() => onRemove(index)}>
+                        <MaterialCommunityIcons name="delete-outline" size={18} color="#dc2626" />
+                    </TouchableOpacity>
+                </View>
             </View>
         </View>
     );
@@ -294,6 +302,8 @@ const SalesScreen = ({ navigation }) => {
     const [lotteryNo, setLotteryNo] = useState('');
     const [permutations, setPermutations] = useState([]);
     const [isBoxProduct, setIsBoxProduct] = useState(false);
+
+    const [editingCartIndex, setEditingCartIndex] = useState(null);
 
     const [showAllCategories, setShowAllCategories] = useState(false);
     const [nextInvoiceNumber, setNextInvoiceNumber] = useState(null);
@@ -446,6 +456,7 @@ const SalesScreen = ({ navigation }) => {
     };
 
     const handleProductSelect = (product) => {
+        setEditingCartIndex(null);
         setSelectedProduct(product);
         setQty('1');
         setDesc('');
@@ -483,21 +494,34 @@ const SalesScreen = ({ navigation }) => {
             product_code: selectedProduct.product_code,
             price: selectedProduct.price,
             qty: quantity,
-            desc: desc.trim()
+            desc: desc.trim(),
+            box: selectedProduct.box,
+            index_type: selectedProduct.index_type,
+            lotteryNo: lotteryNo
         };
 
-        // Check if product already exists in cart
-        const existingIndex = cartItems.findIndex(item => item.product_id === selectedProduct.id);
-        if (existingIndex >= 0) {
-            // Update quantity
+        if (editingCartIndex !== null) {
+            // Update existing cart item
             const updatedItems = [...cartItems];
-            updatedItems[existingIndex].qty += quantity;
-            if (desc.trim()) {
-                updatedItems[existingIndex].desc = desc.trim();
-            }
+            updatedItems[editingCartIndex] = newItem;
             setCartItems(updatedItems);
+            setEditingCartIndex(null);
         } else {
-            setCartItems([...cartItems, newItem]);
+            // Check if product already exists in cart with the SAME lottery number
+            const existingIndex = cartItems.findIndex(item =>
+                item.product_id === selectedProduct.id &&
+                item.desc === desc.trim()
+            );
+
+            if (existingIndex >= 0) {
+                // Update quantity for the exact same lottery number
+                const updatedItems = [...cartItems];
+                updatedItems[existingIndex].qty += quantity;
+                setCartItems(updatedItems);
+            } else {
+                // Add as a new entry if lottery number is different
+                setCartItems([...cartItems, newItem]);
+            }
         }
 
         setShowQtyModal(false);
@@ -505,12 +529,7 @@ const SalesScreen = ({ navigation }) => {
         setSelectedCategory(null);
         setQty('1');
         setDesc('');
-    };
-
-    const handleUpdateCartQty = (index, newQty) => {
-        const updatedItems = [...cartItems];
-        updatedItems[index].qty = newQty;
-        setCartItems(updatedItems);
+        setLotteryNo('');
     };
 
     const handleRemoveFromCart = (index) => {
@@ -545,6 +564,41 @@ const SalesScreen = ({ navigation }) => {
             ]
         );
     };
+
+    const handleEditDesc = useCallback((index) => {
+        const item = cartItems[index];
+        setEditingCartIndex(index);
+
+        setSelectedCategory({
+            id: item.category_id,
+            category_name: item.category_name,
+            time_slots: item.time_slots,
+        });
+
+        setSelectedProduct({
+            id: item.product_id,
+            product_name: item.product_name,
+            product_code: item.product_code,
+            price: item.price,
+            box: item.box,
+            index_type: item.index_type
+        });
+
+        setIsBoxProduct(item.box === 1);
+        setLotteryNo(item.lotteryNo || item.desc || '');
+        setQty(item.qty.toString());
+        setDesc(item.desc || '');
+
+        if (item.box === 1 && !item.index_type && (item.lotteryNo || item.desc)) {
+            const digits = (item.lotteryNo || item.desc).replace(/[^0-9]/g, '').split('');
+            const perms = generatePermutations(digits);
+            setPermutations([...new Set(perms.map(p => p.join('')))]);
+        } else {
+            setPermutations([]);
+        }
+
+        setShowQtyModal(true);
+    }, [cartItems]);
 
     // Print receipt via Bluetooth (uses persistent connection for speed)
     const handlePrintReceipt = async (invoiceNo, items, username) => {
@@ -742,8 +796,8 @@ const SalesScreen = ({ navigation }) => {
                                         key={`${item.product_id}-${index}`}
                                         item={item}
                                         index={index}
-                                        onUpdateQty={handleUpdateCartQty}
                                         onRemove={handleRemoveFromCart}
+                                        onEditDesc={handleEditDesc}
                                     />
                                 ))}
 
@@ -858,6 +912,7 @@ const SalesScreen = ({ navigation }) => {
                 onRequestClose={() => {
                     setShowQtyModal(false);
                     setSelectedProduct(null);
+                    setEditingCartIndex(null);
                 }}
             >
                 <KeyboardAvoidingView
@@ -872,6 +927,7 @@ const SalesScreen = ({ navigation }) => {
                                 onPress={() => {
                                     setShowQtyModal(false);
                                     setSelectedProduct(null);
+                                    setEditingCartIndex(null);
                                 }}
                             >
                                 <MaterialCommunityIcons name="close" size={24} color="#666" />
@@ -901,6 +957,11 @@ const SalesScreen = ({ navigation }) => {
                                                         <MaterialCommunityIcons name="cube-outline" size={14} color="#fff" />
                                                         <Text style={styles.boxBadgeText}>Box</Text>
                                                     </View>
+                                                    {selectedProduct?.index_type && (
+                                                        <View style={[styles.boxBadge, { backgroundColor: '#7c3aed', marginLeft: 8 }]}>
+                                                            <Text style={styles.boxBadgeText}>{selectedProduct.index_type}</Text>
+                                                        </View>
+                                                    )}
                                                 </View>
                                                 <TextInput
                                                     style={styles.input}
@@ -994,6 +1055,12 @@ const SalesScreen = ({ navigation }) => {
                                             <View style={styles.inputGroup}>
                                                 <View style={styles.labelRow}>
                                                     <Text style={styles.label}>Lottery No *</Text>
+                                                    {isBoxProduct && (
+                                                        <View style={[styles.boxBadge, { marginRight: 8 }]}>
+                                                            <MaterialCommunityIcons name="cube-outline" size={14} color="#fff" />
+                                                            <Text style={styles.boxBadgeText}>Box</Text>
+                                                        </View>
+                                                    )}
                                                     {selectedProduct?.index_type && (
                                                         <View style={[styles.boxBadge, { backgroundColor: '#7c3aed' }]}>
                                                             <Text style={styles.boxBadgeText}>{selectedProduct.index_type}</Text>
@@ -1036,8 +1103,8 @@ const SalesScreen = ({ navigation }) => {
                                         style={styles.addToCartButton}
                                         onPress={handleAddToCart}
                                     >
-                                        <MaterialCommunityIcons name="cart-plus" size={22} color="#fff" />
-                                        <Text style={styles.addToCartButtonText}>Add</Text>
+                                        <MaterialCommunityIcons name={editingCartIndex !== null ? "content-save" : "cart-plus"} size={22} color="#fff" />
+                                        <Text style={styles.addToCartButtonText}>{editingCartIndex !== null ? 'Save Changes' : 'Add'}</Text>
                                     </TouchableOpacity>
                                 </>
                             )}
@@ -1045,6 +1112,7 @@ const SalesScreen = ({ navigation }) => {
                     </View>
                 </KeyboardAvoidingView>
             </Modal>
+
         </View>
     );
 };
@@ -1324,86 +1392,82 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     cartItem: {
+        paddingVertical: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    cartItemTopRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f5f5f5',
+        alignItems: 'flex-start',
+        marginBottom: 10,
     },
     cartItemInfo: {
         flex: 1,
         marginRight: 10,
     },
-    cartItemCategory: {
-        fontSize: 11,
-        color: '#3a48c2',
-        fontWeight: '600',
-        textTransform: 'uppercase',
-    },
-    cartItemCategoryRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 2,
-    },
-    cartItemTimeChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#EEF0FF',
-        paddingHorizontal: 6,
-        paddingVertical: 1,
-        borderRadius: 6,
-        gap: 3,
-    },
-    cartItemTimeText: {
-        fontSize: 9,
-        color: '#3a48c2',
-        fontWeight: '700',
-    },
     cartItemName: {
-        fontSize: 14,
-        fontWeight: '600',
+        fontSize: 15,
+        fontWeight: 'bold',
         color: '#1a1a1a',
-        marginBottom: 2,
+        marginBottom: 4,
     },
     cartItemPrice: {
-        fontSize: 12,
-        color: '#888',
+        fontSize: 13,
+        color: '#666',
+        fontWeight: '500',
+    },
+    cartItemTotal: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#15803d',
+    },
+    cartItemBottomRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#F8F9FD',
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+    },
+    cartItemDescWrapper: {
+        flex: 1,
+        marginRight: 12,
+    },
+    boxLabel: {
+        color: '#7c3aed',
+        fontWeight: 'bold',
+    },
+    cartItemDescText: {
+        fontSize: 13,
+        color: '#444',
+        fontWeight: '600',
+        letterSpacing: 0.5,
     },
     cartItemActions: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
+        gap: 8,
     },
-    qtyControlMini: {
+    actionBtnEdit: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#EEF0FF',
-        borderRadius: 8,
-        padding: 4,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 6,
+        gap: 4,
     },
-    qtyBtnMini: {
-        width: 28,
-        height: 28,
-        justifyContent: 'center',
-        alignItems: 'center',
+    actionBtnText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#3a48c2',
     },
-    qtyTextMini: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#1a1a1a',
-        paddingHorizontal: 8,
-    },
-    cartItemTotal: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#15803d',
-        minWidth: 60,
-        textAlign: 'right',
-    },
-    removeBtn: {
-        padding: 4,
+    actionBtnRemove: {
+        backgroundColor: '#FEF2F2',
+        padding: 6,
+        borderRadius: 6,
     },
     grandTotalContainer: {
         flexDirection: 'row',

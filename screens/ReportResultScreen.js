@@ -96,12 +96,12 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                         <Text style={styles.footerText}>{formatDateTime(item.created_at)}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        <TouchableOpacity
+                        {/* <TouchableOpacity
                             onPress={handleEditGroup}
                             style={styles.editIconButton}
                         >
                             <MaterialCommunityIcons name="pencil-outline" size={18} color="#3a48c2" />
-                        </TouchableOpacity>
+                        </TouchableOpacity> */}
 
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                             <Text style={{ fontSize: 12, color: '#3a48c2', marginRight: 4 }}>

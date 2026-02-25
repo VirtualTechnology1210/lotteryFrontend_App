@@ -329,6 +329,16 @@ const WinningScreen = ({ navigation }) => {
                         <Text style={styles.saleDetailLabel}>Qty:</Text>
                         <Text style={styles.saleDetailValue}>{item.qty}</Text>
                     </View>
+                    {item.winning_amount > 0 && (
+                        <View style={[styles.saleDetailRow, { backgroundColor: '#F0FDF4', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, marginTop: 4 }]}>
+                            <MaterialCommunityIcons name="trophy-outline" size={16} color="#059669" />
+                            <Text style={[styles.saleDetailLabel, { color: '#059669', fontWeight: '700' }]}>Prize:</Text>
+                            <Text style={{ fontSize: 14, fontWeight: '800', color: '#059669', flex: 1 }}>
+                                ₹{item.winning_amount.toLocaleString('en-IN')}
+                                {item.qty > 1 ? ` × ${item.qty} = ₹${item.total_winning_amount.toLocaleString('en-IN')}` : ''}
+                            </Text>
+                        </View>
+                    )}
                     <View style={styles.saleDetailRow}>
                         <MaterialCommunityIcons name="calendar-clock" size={16} color="#666" />
                         <Text style={styles.saleDetailLabel}>Date & Time:</Text>
@@ -529,29 +539,73 @@ const WinningScreen = ({ navigation }) => {
                                 {/* Winner Summary */}
                                 {results.is_winner && results.rounds && (
                                     <View style={styles.summaryCard}>
-                                        <View style={styles.summaryHeader}>
-                                            <Text style={styles.summaryTitle}>Match Summary</Text>
-                                            <Text style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>Number: {results.lottery_number}</Text>
+                                        {/* Header */}
+                                        <View style={styles.summaryGradientHeader}>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.summaryHeaderTitle}>Winning Result</Text>
+                                                <Text style={styles.summaryHeaderNumber}>Winning No: {results.lottery_number}</Text>
+                                            </View>
+                                            <View style={styles.summaryMatchCountBadge}>
+                                                <Text style={styles.summaryMatchCountText}>{results.total_winners}</Text>
+                                                <Text style={styles.summaryMatchCountLabel}>Matches</Text>
+                                            </View>
                                         </View>
-                                        <View style={styles.summaryDivider} />
-                                        {results.rounds.map((round) => {
+
+                                        {/* Table Header */}
+                                        <View style={styles.summaryTableHeader}>
+                                            <Text style={[styles.summaryTableHeaderCell, { flex: 1 }]}>Match Type</Text>
+                                            <Text style={[styles.summaryTableHeaderCell, { width: 50, textAlign: 'center' }]}>Count</Text>
+                                            <Text style={[styles.summaryTableHeaderCell, { width: 90, textAlign: 'right' }]}>Prize</Text>
+                                        </View>
+
+                                        {/* Round Rows */}
+                                        {results.rounds.map((round, rIdx) => {
                                             if (round.count === 0) return null;
                                             const inputLength = results.input_length || results.lottery_number.length;
                                             const isExact = (round.digit_count === inputLength);
                                             const color = getRoundColor(round.digit_count, isExact);
+                                            const bgColor = getRoundBgColor(round.digit_count, isExact);
+                                            const isIndexRound = round.digit_count === 0;
+                                            const displayLabel = isIndexRound
+                                                ? 'Index Match'
+                                                : isExact
+                                                    ? 'Exact Match'
+                                                    : (round.digit_count === 1 ? 'Last Digit' : `Last ${round.digit_count} Digits`);
+                                            const suffixDisplay = isIndexRound ? '' : ` (${round.suffix})`;
                                             return (
-                                                <View style={styles.summaryRow} key={`summary-${round.digit_count}`}>
-                                                    <View style={[styles.summaryDot, { backgroundColor: color }]} />
-                                                    <Text style={styles.summaryLabel}>{round.label}{round.digit_count > 0 ? ` (${round.suffix})` : ''}</Text>
-                                                    <Text style={[styles.summaryCount, { color }]}>{round.count}</Text>
+                                                <View
+                                                    key={`summary-${round.digit_count}`}
+                                                    style={[styles.summaryTableRow, rIdx % 2 === 0 && { backgroundColor: '#FAFBFF' }]}
+                                                >
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                                                        <View style={[styles.summaryRoundDot, { backgroundColor: color }]} />
+                                                        <Text style={styles.summaryRoundLabel}>
+                                                            {displayLabel}
+                                                            <Text style={{ color: '#9CA3AF', fontWeight: '500' }}>{suffixDisplay}</Text>
+                                                        </Text>
+                                                    </View>
+                                                    <View style={[styles.summaryCountBadge, { backgroundColor: bgColor }]}>
+                                                        <Text style={[styles.summaryCountBadgeText, { color }]}>{round.count}</Text>
+                                                    </View>
+                                                    <Text style={styles.summaryAmountText}>
+                                                        {round.total_winning_amount > 0
+                                                            ? `₹${round.total_winning_amount.toLocaleString('en-IN')}`
+                                                            : '-'}
+                                                    </Text>
                                                 </View>
                                             );
                                         })}
-                                        <View style={styles.summaryDivider} />
-                                        <View style={styles.summaryRow}>
-                                            <Text style={[styles.summaryLabel, { fontWeight: '700' }]}>Total Matches:</Text>
-                                            <Text style={[styles.summaryCount, { fontWeight: '800', color: '#3a48c2' }]}>{results.total_winners}</Text>
-                                        </View>
+
+                                        {/* Total Payout Footer */}
+                                        {results.grand_total_winning_amount > 0 && (
+                                            <View style={styles.summaryPayoutFooter}>
+                                                <MaterialCommunityIcons name="cash-multiple" size={22} color="#059669" />
+                                                <Text style={styles.summaryPayoutLabel}>Total Payout</Text>
+                                                <Text style={styles.summaryPayoutAmount}>
+                                                    ₹{results.grand_total_winning_amount.toLocaleString('en-IN')}
+                                                </Text>
+                                            </View>
+                                        )}
                                     </View>
                                 )}
 
@@ -944,56 +998,125 @@ const styles = StyleSheet.create({
     summaryCard: {
         backgroundColor: '#fff',
         borderRadius: 16,
-        padding: 16,
         marginBottom: 12,
-        elevation: 4,
+        elevation: 6,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.08,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+        overflow: 'hidden',
     },
-    summaryHeader: {
+    summaryGradientHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginBottom: 4,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F3F4F6',
     },
-    summaryTitle: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: '#1a1a1a',
-    },
-    summaryDivider: {
-        height: 1,
-        backgroundColor: '#E5E7EB',
-        marginVertical: 10,
-    },
-    summaryRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 5,
-    },
-    summaryDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        marginRight: 10,
-    },
-    summaryRoundIcon: {
+    summaryHeaderTitle: {
         fontSize: 18,
+        fontWeight: '800',
+        color: '#3a48c2',
+        letterSpacing: 0.3,
+    },
+    summaryHeaderNumber: {
+        fontSize: 13,
+        color: '#6B7280',
+        marginTop: 2,
+        fontWeight: '500',
+    },
+    summaryMatchCountBadge: {
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        alignItems: 'center',
+    },
+    summaryMatchCountText: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: '#3a48c2',
+    },
+    summaryMatchCountLabel: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#6B7280',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    summaryTableHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        backgroundColor: '#F3F4F6',
+        borderBottomWidth: 1,
+        borderBottomColor: '#E5E7EB',
+    },
+    summaryTableHeaderCell: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#6B7280',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    summaryTableRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F3F4F6',
+    },
+    summaryRoundDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
         marginRight: 8,
     },
-    summaryLabel: {
+    summaryRoundLabel: {
         fontSize: 13,
-        color: '#4B5563',
-        flex: 1,
+        fontWeight: '600',
+        color: '#374151',
     },
-    summaryCount: {
-        fontSize: 15,
-        fontWeight: '700',
-        color: '#1F2937',
-        minWidth: 30,
+    summaryCountBadge: {
+        width: 32,
+        height: 24,
+        borderRadius: 6,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 9,
+    },
+    summaryCountBadgeText: {
+        fontSize: 13,
+        fontWeight: '800',
+    },
+    summaryAmountText: {
+        width: 90,
         textAlign: 'right',
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#059669',
+    },
+    summaryPayoutFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#F3F4F6',
+    },
+    summaryPayoutLabel: {
+        flex: 1,
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#059669',
+        marginLeft: 10,
+    },
+    summaryPayoutAmount: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: '#059669',
+        letterSpacing: 0.3,
     },
     // ── Round Headers ───────────────────────────────────────────
     roundHeader: {
