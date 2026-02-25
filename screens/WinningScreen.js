@@ -207,6 +207,7 @@ const WinningScreen = ({ navigation }) => {
      * matchRound = digit_count (e.g. 4 for exact on a 4-digit input, 3 for last 3, etc.)
      */
     const getRoundColor = (digitCount, isExact) => {
+        if (digitCount === 0) return '#7c3aed'; // Index match — purple
         if (isExact) return '#92400E';
         if (digitCount >= 3) return '#065F46';
         if (digitCount === 2) return '#374151';
@@ -214,6 +215,7 @@ const WinningScreen = ({ navigation }) => {
     };
 
     const getRoundBgColor = (digitCount, isExact) => {
+        if (digitCount === 0) return '#F3E8FF'; // Index match — light purple
         if (isExact) return '#FEF3C7';
         if (digitCount >= 3) return '#ECFDF5';
         if (digitCount === 2) return '#F3F4F6';
@@ -222,6 +224,10 @@ const WinningScreen = ({ navigation }) => {
 
     const getMatchInfo = (matchRound) => {
         if (!results) return { label: '', suffix: '', color: '#666' };
+        if (matchRound === 0) {
+            // Index match — no suffix, use dedicated color
+            return { label: 'Index Match', suffix: '', color: '#7c3aed' };
+        }
         const num = results.lottery_number;
         const inputLength = results.input_length || num.length;
         const isExact = (matchRound === inputLength);
@@ -236,12 +242,16 @@ const WinningScreen = ({ navigation }) => {
     const renderSaleItem = ({ item, index }) => {
         const matchInfo = getMatchInfo(item.match_round);
         const lotteryNum = item.lottery_number || '';
-        const suffix = matchInfo.suffix;
+        const isIndexMatch = item.match_round === 0;
 
-        // Split the lottery number into non-matching prefix + matching suffix
-        const prefixLength = lotteryNum.length - suffix.length;
-        const prefix = lotteryNum.slice(0, prefixLength);
-        const matchedPart = lotteryNum.slice(prefixLength);
+        // For index match, entire number is the match. For regular, split prefix + suffix
+        let prefix = '';
+        let matchedPart = lotteryNum;
+        if (!isIndexMatch && matchInfo.suffix) {
+            const prefixLength = lotteryNum.length - matchInfo.suffix.length;
+            prefix = lotteryNum.slice(0, prefixLength);
+            matchedPart = lotteryNum.slice(prefixLength);
+        }
 
         return (
             <View style={styles.saleItem}>
@@ -257,6 +267,11 @@ const WinningScreen = ({ navigation }) => {
                             <Text style={styles.boxBadgeText}>BOX</Text>
                         </View>
                     )}
+                    {item.index_type && (
+                        <View style={[styles.boxBadge, { backgroundColor: '#F3E8FF' }]}>
+                            <Text style={[styles.boxBadgeText, { color: '#7c3aed' }]}>{item.index_type}</Text>
+                        </View>
+                    )}
                 </View>
                 <View style={styles.saleItemBody}>
                     <View style={styles.saleDetailRow}>
@@ -268,8 +283,45 @@ const WinningScreen = ({ navigation }) => {
                         <MaterialCommunityIcons name="ticket-outline" size={16} color="#666" />
                         <Text style={styles.saleDetailLabel}>Number:</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                            <Text style={{ fontSize: 15, color: '#888', fontWeight: '500' }}>{prefix}</Text>
-                            <Text style={{ fontSize: 15, color: matchInfo.color, fontWeight: '800' }}>{matchedPart}</Text>
+                            {isIndexMatch ? (
+                                (() => {
+                                    const winningNum = results?.lottery_number || '';
+                                    const type = item.index_type?.toUpperCase() || '';
+                                    const len = winningNum.length;
+                                    const highlightedIndices = [];
+                                    if (type.includes('A') && len >= 3) highlightedIndices.push(len - 3);
+                                    if (type.includes('B') && len >= 2) highlightedIndices.push(len - 2);
+                                    if (type.includes('C') && len >= 1) highlightedIndices.push(len - 1);
+
+                                    return (
+                                        <>
+                                            {winningNum.split('').map((char, idx) => (
+                                                <Text
+                                                    key={idx}
+                                                    style={{
+                                                        fontSize: 16,
+                                                        color: highlightedIndices.includes(idx) ? matchInfo.color : '#888',
+                                                        fontWeight: highlightedIndices.includes(idx) ? '900' : '500',
+                                                        backgroundColor: highlightedIndices.includes(idx) ? `${matchInfo.color}15` : 'transparent',
+                                                        paddingHorizontal: highlightedIndices.includes(idx) ? 2 : 0,
+                                                        borderRadius: 4,
+                                                    }}
+                                                >
+                                                    {char}
+                                                </Text>
+                                            ))}
+                                            <Text style={{ fontSize: 12, color: '#999', marginLeft: 10, fontWeight: '800' }}>
+                                                (Sold: {item.lottery_number})
+                                            </Text>
+                                        </>
+                                    );
+                                })()
+                            ) : (
+                                <>
+                                    <Text style={{ fontSize: 15, color: '#888', fontWeight: '500' }}>{prefix}</Text>
+                                    <Text style={{ fontSize: 15, color: matchInfo.color, fontWeight: '800' }}>{matchedPart}</Text>
+                                </>
+                            )}
                         </View>
                     </View>
                     <View style={styles.saleDetailRow}>
@@ -490,7 +542,7 @@ const WinningScreen = ({ navigation }) => {
                                             return (
                                                 <View style={styles.summaryRow} key={`summary-${round.digit_count}`}>
                                                     <View style={[styles.summaryDot, { backgroundColor: color }]} />
-                                                    <Text style={styles.summaryLabel}>{round.label} ({round.suffix})</Text>
+                                                    <Text style={styles.summaryLabel}>{round.label}{round.digit_count > 0 ? ` (${round.suffix})` : ''}</Text>
                                                     <Text style={[styles.summaryCount, { color }]}>{round.count}</Text>
                                                 </View>
                                             );
@@ -508,17 +560,20 @@ const WinningScreen = ({ navigation }) => {
                                     if (round.count === 0) return null;
                                     const inputLength = results.input_length || results.lottery_number.length;
                                     const isExact = (round.digit_count === inputLength);
+                                    const isIndexRound = (round.digit_count === 0);
                                     const color = getRoundColor(round.digit_count, isExact);
                                     const bgColor = getRoundBgColor(round.digit_count, isExact);
-                                    const headerLabel = isExact
-                                        ? `EXACT MATCH (${round.suffix})`
-                                        : (round.digit_count === 1 ? `LAST DIGIT (${round.suffix})` : `LAST ${round.digit_count} DIGITS (${round.suffix})`);
+                                    const headerLabel = isIndexRound
+                                        ? `INDEX MATCH - ${round.count}`
+                                        : isExact
+                                            ? `EXACT MATCH (${round.suffix})`
+                                            : (round.digit_count === 1 ? `LAST DIGIT (${round.suffix})` : `LAST ${round.digit_count} DIGITS (${round.suffix})`);
 
                                     return (
                                         <View style={styles.salesListContainer} key={`round-${round.digit_count}`}>
                                             <View style={[styles.roundHeader, { backgroundColor: bgColor }]}>
                                                 <View>
-                                                    <Text style={[styles.roundHeaderTitle, { color }]}>{headerLabel} - {round.count}</Text>
+                                                    <Text style={[styles.roundHeaderTitle, { color }]}>{isIndexRound ? headerLabel : `${headerLabel} - ${round.count}`}</Text>
                                                 </View>
                                             </View>
                                             {round.matches.map((item, index) => (

@@ -26,7 +26,7 @@ import { salesService } from '../services/salesService';
 import { getImageUrl, authService } from '../services';
 import { invoiceSeriesService } from '../services/invoiceSeriesService';
 import PrinterService from '../printer/PrinterService';
-import { formatSalesReceipt } from '../printer/lotteryReceiptFormatter';
+import { formatSalesReceipt } from '../printer/cpclReceiptFormatter';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -135,7 +135,7 @@ const ProductItem = memo(({ product, onSelect }) => {
                 <Text style={styles.productItemCode}>{product.product_code}</Text>
             </View>
             <View style={styles.productItemRight}>
-                <Text style={styles.productItemPrice}>₹{product.price}</Text>
+                <Text style={styles.productItemPrice}>₹{Math.round(product.price)}</Text>
                 <MaterialCommunityIcons name="plus-circle" size={24} color="#3a48c2" />
             </View>
         </TouchableOpacity>
@@ -148,7 +148,7 @@ const CartItem = memo(({ item, index, onUpdateQty, onRemove }) => {
         <View style={styles.cartItem}>
             <View style={styles.cartItemInfo}>
                 <Text style={styles.cartItemName} numberOfLines={1}>{item.product_name}</Text>
-                <Text style={styles.cartItemPrice}>₹{item.price} × {item.qty}</Text>
+                <Text style={styles.cartItemPrice}>₹{Math.round(item.price)} × {item.qty}</Text>
             </View>
             <View style={styles.cartItemActions}>
                 <View style={styles.qtyControlMini}>
@@ -166,7 +166,7 @@ const CartItem = memo(({ item, index, onUpdateQty, onRemove }) => {
                         <MaterialCommunityIcons name="plus" size={16} color="#3a48c2" />
                     </TouchableOpacity>
                 </View>
-                <Text style={styles.cartItemTotal}>₹{(item.price * item.qty).toFixed(2)}</Text>
+                <Text style={styles.cartItemTotal}>₹{Math.round(item.price * item.qty)}</Text>
                 <TouchableOpacity
                     style={styles.removeBtn}
                     onPress={() => onRemove(index)}
@@ -412,21 +412,37 @@ const SalesScreen = ({ navigation }) => {
     // Handle lottery number change for box products
     const handleLotteryNoChange = (text) => {
         // Only allow digits
-        const digitsOnly = text.replace(/[^0-9]/g, '').slice(0, 5);
+        const maxLen = getIndexMaxLength();
+        const digitsOnly = text.replace(/[^0-9]/g, '').slice(0, maxLen > 0 ? maxLen : 5);
         setLotteryNo(digitsOnly);
 
-        if (digitsOnly.length >= 3) {
+        // Box permutation logic only for non-index products
+        if (!selectedProduct?.index_type && digitsOnly.length >= 3) {
             const digits = digitsOnly.split('');
             const perms = generatePermutations(digits);
             const permNumbers = [...new Set(perms.map(p => p.join('')))];
             setPermutations(permNumbers);
             setQty(permNumbers.length.toString());
             setDesc(permNumbers.join(', '));
+        } else if (selectedProduct?.index_type) {
+            // Index products: desc = the entered digits, qty stays 1
+            setPermutations([]);
+            setQty('1');
+            setDesc(digitsOnly);
         } else {
             setPermutations([]);
             setQty('1');
             setDesc('');
         }
+    };
+
+    // Get max digit length based on product's index_type
+    const getIndexMaxLength = () => {
+        const idx = selectedProduct?.index_type?.toUpperCase();
+        if (!idx) return 0; // 0 = no limit
+        if (['A', 'B', 'C'].includes(idx)) return 1;
+        if (['AB', 'BC', 'AC'].includes(idx)) return 2;
+        return 0;
     };
 
     const handleProductSelect = (product) => {
@@ -601,7 +617,7 @@ const SalesScreen = ({ navigation }) => {
             // Show success with print option
             Alert.alert(
                 '✓ Sale Complete',
-                `Invoice: ${invoiceNumber}\nItems: ${itemsCount}\nGrand Total: ₹${grandTotal.toFixed(2)}`,
+                `Invoice: ${invoiceNumber}\nItems: ${itemsCount}\nGrand Total: ₹${Math.round(grandTotal)}`,
                 [
                     { text: 'Done', style: 'cancel' },
                     {
@@ -734,7 +750,7 @@ const SalesScreen = ({ navigation }) => {
                                 {/* Grand Total */}
                                 <View style={styles.grandTotalContainer}>
                                     <Text style={styles.grandTotalLabel}>Grand Total</Text>
-                                    <Text style={styles.grandTotalValue}>₹{grandTotal.toFixed(2)}</Text>
+                                    <Text style={styles.grandTotalValue}>₹{Math.round(grandTotal)}</Text>
                                 </View>
                             </View>
                         )}
@@ -757,7 +773,7 @@ const SalesScreen = ({ navigation }) => {
                     <View style={styles.bottomBarContent}>
                         <View style={styles.bottomBarInfo}>
                             <Text style={styles.bottomBarItems}>{cartItems.length} item(s)</Text>
-                            <Text style={styles.bottomBarTotal}>₹{grandTotal.toFixed(2)}</Text>
+                            <Text style={styles.bottomBarTotal}>₹{Math.round(grandTotal)}</Text>
                         </View>
                         <TouchableOpacity
                             style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
@@ -876,7 +892,7 @@ const SalesScreen = ({ navigation }) => {
                                     </View>
 
                                     {/* Lottery No Input - Different for box products */}
-                                    {isBoxProduct ? (
+                                    {isBoxProduct && !selectedProduct?.index_type ? (
                                         <>
                                             <View style={styles.inputGroup}>
                                                 <View style={styles.labelRow}>
@@ -976,16 +992,32 @@ const SalesScreen = ({ navigation }) => {
 
                                             {/* Normal Lottery No */}
                                             <View style={styles.inputGroup}>
-                                                <Text style={styles.label}>Lottery No *</Text>
+                                                <View style={styles.labelRow}>
+                                                    <Text style={styles.label}>Lottery No *</Text>
+                                                    {selectedProduct?.index_type && (
+                                                        <View style={[styles.boxBadge, { backgroundColor: '#7c3aed' }]}>
+                                                            <Text style={styles.boxBadgeText}>{selectedProduct.index_type}</Text>
+                                                        </View>
+                                                    )}
+                                                </View>
                                                 <TextInput
-                                                    style={[styles.input, styles.textArea]}
-                                                    placeholder="Enter lottery number"
-                                                    value={desc}
-                                                    onChangeText={setDesc}
-                                                    keyboardType="phone-pad"
+                                                    style={[styles.input, !selectedProduct?.index_type && styles.textArea]}
+                                                    placeholder={selectedProduct?.index_type
+                                                        ? `Enter ${getIndexMaxLength()} digit(s) for ${selectedProduct.index_type}`
+                                                        : "Enter lottery number"}
+                                                    value={selectedProduct?.index_type ? lotteryNo : desc}
+                                                    onChangeText={(text) => {
+                                                        if (selectedProduct?.index_type) {
+                                                            handleLotteryNoChange(text);
+                                                        } else {
+                                                            setDesc(text);
+                                                        }
+                                                    }}
+                                                    keyboardType="numeric"
                                                     placeholderTextColor="#999"
-                                                    multiline
-                                                    numberOfLines={3}
+                                                    maxLength={getIndexMaxLength() > 0 ? getIndexMaxLength() : undefined}
+                                                    multiline={!selectedProduct?.index_type}
+                                                    numberOfLines={selectedProduct?.index_type ? 1 : 3}
                                                 />
                                             </View>
                                         </>

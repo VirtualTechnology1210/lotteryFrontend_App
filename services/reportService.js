@@ -19,6 +19,11 @@ export const reportService = {
     // Get sales by user (admin only)
     getSalesByUser: async (params) => {
         return apiClient.get('/sales/report/by-user', { params });
+    },
+
+    // Get sales by rate summary
+    getRateSummaryReport: async (params) => {
+        return apiClient.get('/sales/report/rate-summary', { params });
     }
 };
 

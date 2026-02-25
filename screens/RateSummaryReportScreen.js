@@ -15,7 +15,7 @@ import { Dropdown } from 'react-native-element-dropdown';
 import { authService } from '../services';
 import { userService } from '../services/userService';
 
-const ReportsScreen = ({ navigation }) => {
+const RateSummaryReportScreen = ({ navigation }) => {
     // Date/Time state
     const [startDate, setStartDate] = useState(new Date());
     const [endDate, setEndDate] = useState(new Date());
@@ -55,7 +55,6 @@ const ReportsScreen = ({ navigation }) => {
             setLoadingUsers(true);
             try {
                 const response = await userService.getAllUsers();
-                // API returns: { success, data: { count, users: [...] } }
                 const allOption = { id: 'all', name: 'All' };
                 const userList = response.data?.data?.users || response.data?.users || [];
                 setUsers([allOption, ...userList]);
@@ -81,7 +80,10 @@ const ReportsScreen = ({ navigation }) => {
         }
 
         // Navigate to result screen with filters
-        navigation.navigate('ReportResult', { filters: params });
+        navigation.navigate('RateSummaryResult', {
+            filters: params,
+            userName: selectedUser?.name !== 'All' ? selectedUser?.name : null
+        });
     };
 
     return (
@@ -101,7 +103,7 @@ const ReportsScreen = ({ navigation }) => {
                     <TouchableOpacity onPress={() => navigation.openDrawer()} style={styles.menuButton}>
                         <MaterialCommunityIcons name="menu" size={24} color="#fff" />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Sales Reports</Text>
+                    <Text style={styles.headerTitle}>Rate Summary Report</Text>
                     <View style={styles.addButtonPlaceholder} />
                 </View>
             </LinearGradient>
@@ -352,7 +354,6 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#fff',
     },
-    // User Filter Styles
     userFilterContainer: {
         marginBottom: 15,
     },
@@ -400,4 +401,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default ReportsScreen;
+export default RateSummaryReportScreen;

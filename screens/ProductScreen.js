@@ -38,6 +38,12 @@ const ProductListItem = memo(({ product, onEdit, onDelete, canEdit, canDelete })
                         <Text style={styles.boxText}>Box</Text>
                     </View>
                 )}
+                {product.index_type && (
+                    <View style={[styles.badge, styles.indexBadge]}>
+                        <MaterialCommunityIcons name="alpha-a-box-outline" size={12} color="#7c3aed" />
+                        <Text style={styles.indexText}>{product.index_type}</Text>
+                    </View>
+                )}
             </View>
             {product.category_name && (
                 <Text style={styles.categoryLabel}>{product.category_name}</Text>
@@ -87,10 +93,23 @@ const ProductScreen = ({ navigation }) => {
     const [productCode, setProductCode] = useState('');
     const [price, setPrice] = useState('');
     const [box, setBox] = useState(0); // 0 = No, 1 = Yes
+    const [indexType, setIndexType] = useState(null); // null, A, B, C, AB, BC, AC
     const [editingProduct, setEditingProduct] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isFocus, setIsFocus] = useState(false);
+    const [isIndexFocus, setIsIndexFocus] = useState(false);
     const [isCodeAutoSynced, setIsCodeAutoSynced] = useState(true);
+
+    // Static index type options
+    const INDEX_TYPE_OPTIONS = [
+        { label: 'None', value: null },
+        { label: 'A', value: 'A' },
+        { label: 'B', value: 'B' },
+        { label: 'C', value: 'C' },
+        { label: 'AB', value: 'AB' },
+        { label: 'BC', value: 'BC' },
+        { label: 'AC', value: 'AC' },
+    ];
 
     // Load permissions on mount
     useEffect(() => {
@@ -153,6 +172,7 @@ const ProductScreen = ({ navigation }) => {
         setProductCode(product.product_code);
         setPrice(product.price.toString());
         setBox(product.box || 0);
+        setIndexType(product.index_type || null);
         setEditingProduct(product);
         setIsCodeAutoSynced(false);
         setShowAddModal(true);
@@ -164,6 +184,7 @@ const ProductScreen = ({ navigation }) => {
         setProductCode('');
         setPrice('');
         setBox(0);
+        setIndexType(null);
         setEditingProduct(null);
         setIsCodeAutoSynced(true);
     };
@@ -203,7 +224,8 @@ const ProductScreen = ({ navigation }) => {
                 product_name: productName.trim(),
                 product_code: productCode.trim(),
                 price: parseFloat(price),
-                box: box
+                box: box,
+                index_type: indexType
             };
 
             if (editingProduct) {
@@ -382,6 +404,28 @@ const ProductScreen = ({ navigation }) => {
                             </View>
                             <Text style={styles.checkboxLabel}>Box? </Text>
                         </TouchableOpacity>
+
+                        {/* Index Type Dropdown */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Index Type</Text>
+                            <Dropdown
+                                style={[styles.dropdown, isIndexFocus && { borderColor: '#7c3aed' }]}
+                                placeholderStyle={styles.placeholderStyle}
+                                selectedTextStyle={styles.selectedTextStyle}
+                                data={INDEX_TYPE_OPTIONS}
+                                maxHeight={300}
+                                labelField="label"
+                                valueField="value"
+                                placeholder={!isIndexFocus ? 'Select Index (optional)' : '...'}
+                                value={indexType}
+                                onFocus={() => setIsIndexFocus(true)}
+                                onBlur={() => setIsIndexFocus(false)}
+                                onChange={item => {
+                                    setIndexType(item.value);
+                                    setIsIndexFocus(false);
+                                }}
+                            />
+                        </View>
 
                         {/* Submit Button */}
                         <TouchableOpacity
@@ -692,6 +736,14 @@ const styles = StyleSheet.create({
     boxText: {
         fontSize: 12,
         color: '#854d0e',
+        fontWeight: 'bold',
+    },
+    indexBadge: {
+        backgroundColor: '#F3E8FF',
+    },
+    indexText: {
+        fontSize: 12,
+        color: '#7c3aed',
         fontWeight: 'bold',
     },
     categoryLabel: {

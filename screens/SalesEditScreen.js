@@ -16,7 +16,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { salesService } from '../services/salesService';
 import { authService } from '../services';
 import PrinterService from '../printer/PrinterService';
-import { formatSalesReceipt } from '../printer/lotteryReceiptFormatter';
+import { formatSalesReceipt } from '../printer/cpclReceiptFormatter';
 
 const SalesEditScreen = ({ navigation, route }) => {
     const { saleId, saleData, isMultiple, salesItems, groupTotal } = route.params || {};
@@ -101,7 +101,7 @@ const SalesEditScreen = ({ navigation, route }) => {
             if (field === 'qty' || field === 'unit_price') {
                 const qty = parseFloat(field === 'qty' ? value : updated.qty) || 0;
                 const unitPrice = parseFloat(field === 'unit_price' ? value : updated.unit_price) || 0;
-                updated.total = String((qty * unitPrice).toFixed(2));
+                updated.total = String(Math.round(qty * unitPrice));
             }
 
             return updated;
@@ -117,7 +117,7 @@ const SalesEditScreen = ({ navigation, route }) => {
             if (field === 'qty' || field === 'unit_price') {
                 const qty = parseFloat(field === 'qty' ? value : updated[index].qty) || 0;
                 const unitPrice = parseFloat(field === 'unit_price' ? value : updated[index].unit_price) || 0;
-                updated[index].total = String((qty * unitPrice).toFixed(2));
+                updated[index].total = String(Math.round(qty * unitPrice));
             }
 
             // Recalculate group total
@@ -397,7 +397,7 @@ const SalesEditScreen = ({ navigation, route }) => {
 
                 <View style={styles.totalContainer}>
                     <Text style={styles.totalLabel}>Total Amount</Text>
-                    <Text style={styles.totalValue}>₹{formData.total || '0.00'}</Text>
+                    <Text style={styles.totalValue}>₹{formData.total ? Math.round(parseFloat(formData.total)) : '0'}</Text>
                 </View>
             </View>
 
@@ -438,7 +438,7 @@ const SalesEditScreen = ({ navigation, route }) => {
                 </View>
                 <View style={styles.summaryTotalContainer}>
                     <Text style={styles.summaryTotalLabel}>Batch Total</Text>
-                    <Text style={styles.summaryTotalValue}>₹{multipleTotal.toFixed(2)}</Text>
+                    <Text style={styles.summaryTotalValue}>₹{Math.round(multipleTotal)}</Text>
                 </View>
             </View>
 
@@ -486,7 +486,7 @@ const SalesEditScreen = ({ navigation, route }) => {
 
                     <View style={styles.itemTotalRow}>
                         <Text style={styles.itemTotalLabel}>Item Total:</Text>
-                        <Text style={styles.itemTotalValue}>₹{item.total || '0.00'}</Text>
+                        <Text style={styles.itemTotalValue}>₹{item.total ? Math.round(parseFloat(item.total)) : '0'}</Text>
                     </View>
 
                     <View style={styles.inputGroup}>

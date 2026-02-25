@@ -17,6 +17,8 @@ import UserScreen from './screens/UserScreen';
 import RolesPermissionsScreen from './screens/RolesPermissionsScreen';
 import ReportsScreen from './screens/ReportsScreen';
 import ReportResultScreen from './screens/ReportResultScreen';
+import RateSummaryReportScreen from './screens/RateSummaryReportScreen';
+import RateSummaryResultScreen from './screens/RateSummaryResultScreen';
 import SalesEditScreen from './screens/SalesEditScreen';
 import CustomDrawer from './components/CustomDrawer';
 import PrinterSettingsScreen from './screens/PrinterSettingsScreen';
@@ -34,6 +36,7 @@ const SCREEN_CONFIG = [
   { name: 'Sales', component: SalesScreen, icon: 'chart-line', permKey: 'sales' },
   { name: 'Winning', component: WinningScreen, icon: 'trophy-outline', permKey: 'winning' },
   { name: 'Reports', component: ReportsScreen, icon: 'file-chart-outline', permKey: 'reports' },
+  { name: 'Rate Summary', component: RateSummaryReportScreen, icon: 'calculator-variant-outline', permKey: 'reports' },
   { name: 'Users', component: UserScreen, icon: 'account-group-outline', permKey: 'users', adminOnly: true },
   { name: 'Roles & Permissions', component: RolesPermissionsScreen, icon: 'shield-account-outline', permKey: 'roles & permissions', adminOnly: true },
 ];
@@ -147,6 +150,7 @@ const App = () => {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Home" component={DrawerNavigator} />
           <Stack.Screen name="ReportResult" component={ReportResultScreen} />
+          <Stack.Screen name="RateSummaryResult" component={RateSummaryResultScreen} />
           <Stack.Screen name="SaleEdit" component={SalesEditScreen} />
           <Stack.Screen name="PrinterSettings" component={PrinterSettingsScreen} />
           <Stack.Screen name="Winning" component={WinningScreen} />

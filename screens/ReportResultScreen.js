@@ -15,7 +15,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import LinearGradient from 'react-native-linear-gradient';
 import { reportService } from '../services/reportService';
 import PrinterService from '../printer/PrinterService';
-import { formatSalesReportReceipt } from '../printer/lotteryReceiptFormatter';
+import { formatSalesReportReceipt } from '../printer/cpclReceiptFormatter';
 
 // Memoized Report Item for FlatList performance
 const ReportItem = memo(({ item, formatDateTime, navigation }) => {
@@ -58,7 +58,7 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                         )}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.totalAmount}>₹{item.total.toFixed(2)}</Text>
+                        <Text style={styles.totalAmount}>₹{Math.round(item.total)}</Text>
                     </View>
                 </View>
 
@@ -75,14 +75,14 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                                 <View style={{ flex: 1 }}>
                                     <Text style={styles.subItemName}>{subItem.product_name}</Text>
                                     <Text style={styles.subItemMeta}>
-                                        {subItem.qty} x ₹{subItem.unit_price ? subItem.unit_price.toFixed(2) : '0.00'}
+                                        {subItem.qty} x ₹{subItem.unit_price ? Math.round(subItem.unit_price) : '0'}
                                     </Text>
                                     {subItem.desc ? (
                                         <Text style={styles.subItemDesc} numberOfLines={1}>Note: {subItem.desc}</Text>
                                     ) : null}
                                 </View>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                    <Text style={styles.subItemTotal}>₹{parseFloat(subItem.total).toFixed(2)}</Text>
+                                    <Text style={styles.subItemTotal}>₹{Math.round(parseFloat(subItem.total))}</Text>
                                     {/* <MaterialCommunityIcons name="pencil-outline" size={14} color="#3a48c2" /> */}
                                 </View>
                             </TouchableOpacity>
@@ -139,7 +139,7 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                     </View>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.totalAmount}>₹{parseFloat(item.total).toFixed(2)}</Text>
+                    <Text style={styles.totalAmount}>₹{Math.round(parseFloat(item.total))}</Text>
                 </View>
             </View>
 
@@ -149,7 +149,7 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                 <View style={styles.detailRow}>
                     <View style={styles.detailItem}>
                         <Text style={styles.detailLabel}>Unit Price</Text>
-                        <Text style={styles.detailValue}>₹{item.unit_price ? item.unit_price.toFixed(2) : '0.00'}</Text>
+                        <Text style={styles.detailValue}>₹{item.unit_price ? Math.round(item.unit_price) : '0'}</Text>
                     </View>
                     <View style={[styles.detailItem, { alignItems: 'center' }]}>
                         <Text style={styles.detailLabel}>Quantity</Text>
@@ -368,7 +368,7 @@ const ReportResultScreen = ({ navigation, route }) => {
                     <View style={[styles.summaryCard, styles.summaryCardWide]}>
                         <View style={styles.summaryRow}>
                             <MaterialCommunityIcons name="cash-multiple" size={24} color="#c2410c" />
-                            <Text style={styles.summaryValue}>₹{summary.total_amount.toFixed(2)}</Text>
+                            <Text style={styles.summaryValue}>₹{Math.round(summary.total_amount)}</Text>
                         </View>
                         <Text style={styles.summaryLabel}>Total Amount</Text>
                     </View>
