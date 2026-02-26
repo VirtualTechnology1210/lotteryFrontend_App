@@ -52,7 +52,7 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                         </View>
                         {item.invoice_number && (
                             <View style={styles.invoiceBadge}>
-                                <MaterialCommunityIcons name="receipt" size={12} color="#3a48c2" />
+                                <MaterialCommunityIcons name="receipt" size={20} color="#3a48c2" />
                                 <Text style={styles.invoiceText}>Invoice: {item.invoice_number}</Text>
                             </View>
                         )}
@@ -73,7 +73,6 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                                 activeOpacity={0.7}
                             >
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.subItemName}>{subItem.product_name}</Text>
                                     <Text style={styles.subItemMeta}>
                                         {subItem.qty} x ₹{subItem.unit_price ? Math.round(subItem.unit_price) : '0'}
                                     </Text>
@@ -123,7 +122,6 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
         <View style={styles.reportCard}>
             <View style={styles.reportHeader}>
                 <View style={styles.headerLeft}>
-                    <Text style={styles.productName}>{item.product_name}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         {item.product_code && (
                             <View style={styles.codeBadge}>
@@ -133,7 +131,14 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                         {item.invoice_number && (
                             <View style={styles.invoiceBadge}>
                                 <MaterialCommunityIcons name="receipt" size={12} color="#3a48c2" />
-                                <Text style={styles.invoiceText}>Invoice: {item.invoice_number}</Text>
+                                <Text style={styles.invoiceText}>
+                                    Invoice: {item.invoice_number}
+                                </Text>
+                            </View>
+                        )}
+                        {item.category_name && (
+                            <View style={[styles.codeBadge, { backgroundColor: '#E8F5E9', marginLeft: 4 }]}>
+                                <Text style={[styles.codeText, { color: '#2E7D32' }]}>{item.category_name}</Text>
                             </View>
                         )}
                     </View>
@@ -174,12 +179,12 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                     <MaterialCommunityIcons name="clock-outline" size={14} color="#888" />
                     <Text style={styles.footerText}>{formatDateTime(item.created_at)}</Text>
                 </View>
-                <TouchableOpacity
+                {/* <TouchableOpacity
                     onPress={() => handleEditSingle(item)}
                     style={styles.editIconButton}
                 >
                     <MaterialCommunityIcons name="pencil-outline" size={18} color="#3a48c2" />
-                </TouchableOpacity>
+                </TouchableOpacity> */}
             </View>
         </View>
     );
@@ -226,7 +231,8 @@ const ReportResultScreen = ({ navigation, route }) => {
                                     items: [],
                                     total: 0,
                                     isGroup: false,
-                                    id: `invoice-${item.invoice_number}`
+                                    id: `invoice-${item.invoice_number}`,
+                                    category_name: item.category_name
                                 };
                             }
                             invoiceGroups[item.invoice_number].items.push(item);
@@ -247,6 +253,10 @@ const ReportResultScreen = ({ navigation, route }) => {
                         if (group.items.length > 1) {
                             group.isGroup = true;
                             group.id = `group-${group.invoice_number}`;
+                            // If grouped, take the category from the first item if not already set
+                            if (!group.category_name && group.items[0]) {
+                                group.category_name = group.items[0].category_name;
+                            }
                         } else {
                             const singleItem = group.items[0];
                             Object.assign(group, singleItem);
@@ -600,7 +610,7 @@ const styles = StyleSheet.create({
         borderRadius: 4,
     },
     codeText: {
-        fontSize: 11,
+        fontSize: 15,
         color: '#3a48c2',
         fontWeight: '600',
     },
@@ -615,7 +625,7 @@ const styles = StyleSheet.create({
         alignSelf: 'flex-start',
     },
     invoiceText: {
-        fontSize: 11,
+        fontSize: 15,
         color: '#3a48c2',
         fontWeight: '700',
     },
@@ -727,11 +737,6 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderBottomWidth: 1,
         borderBottomColor: '#eee',
-    },
-    subItemName: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#333',
     },
     subItemMeta: {
         fontSize: 12,

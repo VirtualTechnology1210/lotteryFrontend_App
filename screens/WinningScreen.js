@@ -10,7 +10,8 @@ import {
     Alert,
     ActivityIndicator,
     Platform,
-    FlatList
+    FlatList,
+    ToastAndroid
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
@@ -31,6 +32,12 @@ const WinningScreen = ({ navigation }) => {
     // Results state
     const [results, setResults] = useState(null);
     const [showResults, setShowResults] = useState(false);
+
+    // Submission state
+    const [isSubmittingEntry, setIsSubmittingEntry] = useState(false);
+
+    // Existing submitted winning entry for the selected category/slot
+    const [existingEntry, setExistingEntry] = useState(null);
 
     // Permission state
     const [permissions, setPermissions] = useState({
@@ -96,15 +103,14 @@ const WinningScreen = ({ navigation }) => {
     };
 
     /**
-     * Calculate the display-friendly time window on the frontend
-     * so users can see the range BEFORE submitting
+     * Calculate window start/end dates from a category's time slot.
+     * Reusable for both display and API calls.
      */
-    const getTimeWindowPreview = () => {
-        if (!selectedCategory) return null;
-        const timeSlot = selectedCategory.time_slots?.[0];
+    const calculateWindowDates = (category) => {
+        if (!category) return null;
+        const timeSlot = category.time_slots?.[0];
         if (!timeSlot) return null;
 
-        // Parse time slot string like "3:00 PM" or "10:00 AM"
         const match12h = timeSlot.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
         const match24h = timeSlot.trim().match(/^(\d{1,2}):(\d{2})$/);
 
@@ -126,20 +132,27 @@ const WinningScreen = ({ navigation }) => {
         }
 
         const now = new Date();
-
-        // End = today at [time_slot]
         const windowEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
-
-        // Start = yesterday at [time_slot]
         const windowStart = new Date(windowEnd);
         windowStart.setDate(windowStart.getDate() - 1);
 
+        return { start: windowStart, end: windowEnd };
+    };
+
+    /**
+     * Calculate the display-friendly time window on the frontend
+     * so users can see the range BEFORE submitting
+     */
+    const getTimeWindowPreview = () => {
+        const windowDates = calculateWindowDates(selectedCategory);
+        if (!windowDates) return null;
+
         return {
-            start: windowStart.toLocaleString('en-IN', {
+            start: windowDates.start.toLocaleString('en-IN', {
                 day: '2-digit', month: 'short', year: 'numeric',
                 hour: '2-digit', minute: '2-digit', hour12: true
             }),
-            end: windowEnd.toLocaleString('en-IN', {
+            end: windowDates.end.toLocaleString('en-IN', {
                 day: '2-digit', month: 'short', year: 'numeric',
                 hour: '2-digit', minute: '2-digit', hour12: true
             })
@@ -187,6 +200,55 @@ const WinningScreen = ({ navigation }) => {
         setResults(null);
         setShowResults(false);
     }, []);
+
+    /**
+     * Submit the winning entry — saves checked results to the database.
+     */
+    const handleSubmitWinning = async () => {
+        if (!results) {
+            Alert.alert('Error', 'Please check a winning number first.');
+            return;
+        }
+
+        setIsSubmittingEntry(true);
+        try {
+            const roundsSummary = results.rounds
+                ?.filter(r => r.count > 0)
+                .map(r => ({
+                    digit_count: r.digit_count,
+                    label: r.label,
+                    suffix: r.suffix,
+                    count: r.count,
+                    total_winning_amount: r.total_winning_amount
+                })) || [];
+
+            const payload = {
+                category_id: results.category_id,
+                lottery_number: results.lottery_number,
+                time_slot: results.time_slot,
+                window_start: results.window.start,
+                window_end: results.window.end,
+                total_winners: results.total_winners || 0,
+                grand_total_winning_amount: results.grand_total_winning_amount || 0,
+                rounds_data: roundsSummary
+            };
+
+            const response = await winningService.submitWinning(payload);
+
+            if (response?.data) {
+                if (Platform.OS === 'android') {
+                    ToastAndroid.show('Winning entry submitted successfully!', ToastAndroid.SHORT);
+                }
+                Alert.alert('Success', 'Winning entry submitted successfully.');
+            }
+        } catch (error) {
+            console.error('Submit winning error:', error);
+            const msg = error.response?.data?.message || error.message || 'Failed to submit winning entry';
+            Alert.alert('Submission Failed', msg);
+        } finally {
+            setIsSubmittingEntry(false);
+        }
+    };
 
     const formatDateTime = (dateStr) => {
         if (!dateStr) return '-';
@@ -476,6 +538,27 @@ const WinningScreen = ({ navigation }) => {
                                 </View>
                             )}
 
+                            {/* Existing Entry Banner */}
+                            {existingEntry && (
+                                <View style={styles.existingEntryBanner}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                                        <MaterialCommunityIcons name="check-decagram" size={20} color="#059669" />
+                                        <Text style={styles.existingEntryTitle}>Winning Already Submitted</Text>
+                                    </View>
+                                    <Text style={styles.existingEntryNumber}>
+                                        Winning No: {existingEntry.lottery_number}
+                                    </Text>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                                        <Text style={styles.existingEntryMeta}>
+                                            By: {existingEntry.submitted_by}
+                                        </Text>
+                                        <Text style={styles.existingEntryMeta}>
+                                            Payout: ₹{parseFloat(existingEntry.grand_total_winning_amount || 0).toLocaleString('en-IN')}
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
+
                             {/* Lottery Number Input */}
                             <View style={styles.inputGroup}>
                                 <Text style={styles.label}>Lottery Number *</Text>
@@ -638,6 +721,24 @@ const WinningScreen = ({ navigation }) => {
                                         </View>
                                     );
                                 })}
+
+                                {/* Submit Winning Button */}
+                                {permissions.add && (
+                                    <TouchableOpacity
+                                        style={[styles.submitWinningButton, isSubmittingEntry && { opacity: 0.6 }]}
+                                        onPress={handleSubmitWinning}
+                                        disabled={isSubmittingEntry}
+                                    >
+                                        {isSubmittingEntry ? (
+                                            <ActivityIndicator color="#fff" />
+                                        ) : (
+                                            <>
+                                                <MaterialCommunityIcons name="check-circle-outline" size={22} color="#fff" />
+                                                <Text style={styles.submitWinningButtonText}>Submit</Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         )}
                     </>
@@ -1230,6 +1331,54 @@ const styles = StyleSheet.create({
     saleTotalValue: {
         color: '#10b981',
         fontWeight: '700',
+    },
+    // ── Existing Entry Banner ────────────────────────────────────
+    existingEntryBanner: {
+        backgroundColor: '#ECFDF5',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 15,
+        borderWidth: 1,
+        borderColor: '#A7F3D0',
+    },
+    existingEntryTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#059669',
+        marginLeft: 6,
+    },
+    existingEntryNumber: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#065F46',
+        letterSpacing: 1,
+    },
+    existingEntryMeta: {
+        fontSize: 12,
+        color: '#6B7280',
+    },
+    // ── Submit Winning Button ────────────────────────────────────
+    submitWinningButton: {
+        backgroundColor: '#059669',
+        borderRadius: 16,
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        marginTop: 15,
+        marginBottom: 12,
+        elevation: 4,
+        shadowColor: '#059669',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+    },
+    submitWinningButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '800',
+        letterSpacing: 0.5,
     },
 });
 
