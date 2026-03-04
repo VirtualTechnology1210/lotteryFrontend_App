@@ -109,9 +109,9 @@ const RateSummaryResultScreen = ({ navigation, route }) => {
 
     const renderItem = ({ item }) => (
         <View style={styles.tableRow}>
-            <Text style={[styles.rowText, styles.colRate]}>₹{Math.round(item.rate)}</Text>
+            <Text style={[styles.rowText, styles.colRate]}>Rs.{item.rate}</Text>
             <Text style={[styles.rowText, styles.colQty]}>{item.total_quantity}</Text>
-            <Text style={[styles.rowText, styles.colTotal, styles.amountText]}>₹{Math.round(item.total_amount)}</Text>
+            <Text style={[styles.rowText, styles.colTotal, styles.amountText]}>Rs.{item.total_amount}</Text>
         </View>
     );
 
@@ -130,7 +130,7 @@ const RateSummaryResultScreen = ({ navigation, route }) => {
                     <View style={styles.summaryCard}>
                         <View style={styles.summaryRow}>
                             <MaterialCommunityIcons name="cash-multiple" size={24} color="#c2410c" />
-                            <Text style={styles.summaryValue}>₹{Math.round(summary.total_amount)}</Text>
+                            <Text style={styles.summaryValue}>Rs.{summary.total_amount}</Text>
                         </View>
                         <Text style={styles.summaryLabel}>Total Amount</Text>
                     </View>

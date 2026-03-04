@@ -45,15 +45,19 @@ export const winningService = {
      * 
      * @param {string} startDate - YYYY-MM-DD format
      * @param {string} endDate - YYYY-MM-DD format (optional, defaults to startDate)
+     * @param {number|null} categoryId - Optional category ID to filter by
      * @returns {Promise} API response with summary data
      */
-    getWinningSummary: async (startDate, endDate = null) => {
+    getWinningSummary: async (startDate, endDate = null, categoryId = null) => {
         const params = {};
         if (startDate && endDate && startDate !== endDate) {
             params.start_date = startDate;
             params.end_date = endDate;
         } else if (startDate) {
             params.date = startDate;
+        }
+        if (categoryId) {
+            params.category_id = categoryId;
         }
         return apiClient.get('/winning/summary', { params });
     },

@@ -7,23 +7,31 @@ import {
     TouchableOpacity,
     Platform,
     ActivityIndicator,
-    RefreshControl
+    RefreshControl,
+    Alert,
+    ToastAndroid
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import { winningService } from '../services/winningService';
+import PrinterService from '../printer/PrinterService';
+import { formatWinningSummaryReceipt } from '../printer/cpclReceiptFormatter';
 
 const WinningSummaryResultScreen = ({ navigation, route }) => {
     // Get filter params from navigation (same pattern as ReportResultScreen)
     const filters = route.params?.filters || {};
     const startDate = filters.start_date || new Date().toISOString().split('T')[0];
     const endDate = filters.end_date || startDate;
+    const categoryId = filters.category_id || null;
+    const categoryName = filters.category_name || null;
 
     // Data state
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [summary, setSummary] = useState(null);
     const [error, setError] = useState(null);
+    const [isPrinting, setIsPrinting] = useState(false);
+
 
     const formatDisplayDate = (dateStr) => {
         if (!dateStr) return '-';
@@ -40,7 +48,7 @@ const WinningSummaryResultScreen = ({ navigation, route }) => {
         setError(null);
 
         try {
-            const response = await winningService.getWinningSummary(startDate, endDate);
+            const response = await winningService.getWinningSummary(startDate, endDate, categoryId);
 
             if (response?.data) {
                 setSummary(response.data);
@@ -52,7 +60,7 @@ const WinningSummaryResultScreen = ({ navigation, route }) => {
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }, [startDate, endDate]);
+    }, [startDate, endDate, categoryId]);
 
     // Fetch on mount
     useEffect(() => {
@@ -69,6 +77,63 @@ const WinningSummaryResultScreen = ({ navigation, route }) => {
     const dateRangeLabel = isSameDay
         ? formatDisplayDate(startDate)
         : `${formatDisplayDate(startDate)} - ${formatDisplayDate(endDate)}`;
+
+    const formatCurrency = (amount) => {
+        return '₹' + (amount || 0).toLocaleString('en-IN');
+    };
+
+    // Print the winning summary receipt
+    const handlePrintSummary = () => {
+        if (!summary) {
+            Alert.alert('No Data', 'No summary data to print.');
+            return;
+        }
+
+        Alert.alert(
+            'Print Summary',
+            'Are you sure you want to print the winning summary?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Print',
+                    onPress: async () => {
+                        setIsPrinting(true);
+                        try {
+                            const receiptBytes = formatWinningSummaryReceipt({
+                                fromDate: startDate,
+                                toDate: endDate,
+                                summary: summary,
+                            }, '80');
+
+                            await PrinterService.printWithPersistentConnection(receiptBytes);
+
+                            if (Platform.OS === 'android') {
+                                ToastAndroid.show('Summary printed successfully!', ToastAndroid.SHORT);
+                            }
+                        } catch (error) {
+                            console.error('[Print Summary] Error:', error);
+                            const msg = error.message || 'Failed to print summary';
+
+                            if (msg.includes('No printer configured')) {
+                                Alert.alert(
+                                    'No Printer',
+                                    'No printer configured. Would you like to set up a printer?',
+                                    [
+                                        { text: 'Later', style: 'cancel' },
+                                        { text: 'Setup', onPress: () => navigation.navigate('PrinterSettings') }
+                                    ]
+                                );
+                            } else if (Platform.OS === 'android') {
+                                ToastAndroid.show(`Print: ${msg}`, ToastAndroid.LONG);
+                            }
+                        } finally {
+                            setIsPrinting(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
     return (
         <View style={styles.container}>
@@ -87,13 +152,31 @@ const WinningSummaryResultScreen = ({ navigation, route }) => {
                         <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Winning Summary</Text>
-                    <View style={styles.headerPlaceholder} />
+                    <TouchableOpacity
+                        onPress={handlePrintSummary}
+                        style={styles.printButton}
+                        disabled={isPrinting || isLoading || !summary}
+                    >
+                        {isPrinting ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <MaterialCommunityIcons name="printer" size={22} color="#fff" />
+                        )}
+                    </TouchableOpacity>
                 </View>
 
                 {/* Date Range Badge */}
                 <View style={styles.dateRangeBadge}>
                     <MaterialCommunityIcons name="calendar-range" size={16} color="rgba(255,255,255,0.8)" />
                     <Text style={styles.dateRangeText}>{dateRangeLabel}</Text>
+                </View>
+
+                {/* Category Badge */}
+                <View style={styles.categoryBadge}>
+                    <MaterialCommunityIcons name="shape" size={16} color="rgba(255,255,255,0.8)" />
+                    <Text style={styles.categoryBadgeText}>
+                        {categoryName || 'All Categories'}
+                    </Text>
                 </View>
             </LinearGradient>
 
@@ -137,37 +220,92 @@ const WinningSummaryResultScreen = ({ navigation, route }) => {
                 {!isLoading && !error && summary && ((summary.total_entries > 0) || (summary.total_sales_amount || 0) > 0) && (
                     <View style={styles.summaryContainer}>
 
-                        {/* ── Grand Summary: Sales | Winning | Balance ── */}
-                        <View style={styles.summaryGrid}>
-                            <View style={styles.summaryCard}>
-                                <View style={styles.summaryRow}>
-                                    <MaterialCommunityIcons name="cash-register" size={24} color="#3a48c2" />
-                                    <Text style={styles.summaryValue}>
-                                        ₹{(summary.total_sales_amount || 0).toLocaleString('en-IN')}
-                                    </Text>
-                                </View>
-                                <Text style={styles.summaryLabel}>Total Sales Prize</Text>
+                        {/* ── Overall Summary Card ── */}
+                        <View style={styles.overallCard}>
+                            <View style={styles.overallCardHeader}>
+                                <MaterialCommunityIcons name="chart-box-outline" size={20} color="#3a48c2" />
+                                <Text style={styles.overallCardTitle}>Overall Summary</Text>
                             </View>
 
-                            <View style={styles.summaryCard}>
-                                <View style={styles.summaryRow}>
-                                    <MaterialCommunityIcons name="trophy-outline" size={24} color="#dc2626" />
-                                    <Text style={styles.summaryValue}>
-                                        ₹{(summary.total_winning_amount || 0).toLocaleString('en-IN')}
+                            <View style={styles.overallGrid}>
+                                <View style={styles.overallItem}>
+                                    <Text style={styles.overallItemLabel}>Total Sales</Text>
+                                    <Text style={[styles.overallItemValue, { color: '#3a48c2' }]}>
+                                        {formatCurrency(summary.total_sales_amount)}
                                     </Text>
                                 </View>
-                                <Text style={styles.summaryLabel}>Winning Amount</Text>
-                            </View>
 
-                            <View style={styles.summaryCard}>
-                                <View style={styles.summaryRow}>
-                                    <Text style={[styles.summaryValue, { color: summary.total_balance >= 0 ? '#059669' : '#dc2626' }]}>
-                                        ₹{(summary.total_balance || 0).toLocaleString('en-IN')}
+                                <View style={styles.overallDivider} />
+
+                                <View style={styles.overallItem}>
+                                    <Text style={styles.overallItemLabel}>Total Winning</Text>
+                                    <Text style={[styles.overallItemValue, { color: '#189b39ff' }]}>
+                                        {formatCurrency(summary.total_winning_amount)}
                                     </Text>
                                 </View>
-                                <Text style={styles.summaryLabel}>Balance</Text>
+
+                                <View style={styles.overallDivider} />
+
+                                <View style={styles.overallItem}>
+                                    <Text style={styles.overallItemLabel}>Balance</Text>
+                                    <Text style={[styles.overallItemValue, { color: '#dc2626' }]}>
+                                        {formatCurrency(summary.total_balance)}
+                                    </Text>
+                                </View>
                             </View>
                         </View>
+
+                        {/* ── User-wise Split Section ── */}
+                        {summary.user_wise && summary.user_wise.length > 0 && (
+                            <View style={styles.userSectionContainer}>
+                                <View style={styles.userSectionHeader}>
+                                    <MaterialCommunityIcons name="account-group-outline" size={20} color="#3a48c2" />
+                                    <Text style={styles.userSectionTitle}>User-wise Split</Text>
+                                </View>
+
+                                {summary.user_wise.map((user, index) => (
+                                    <View key={index} style={styles.userCard}>
+                                        {/* User Name Header */}
+                                        <View style={styles.userCardHeader}>
+                                            <View style={styles.userAvatar}>
+                                                <Text style={styles.userAvatarText}>
+                                                    {(user.user_name || '?').charAt(0).toUpperCase()}
+                                                </Text>
+                                            </View>
+                                            <Text style={styles.userCardName}>{user.user_name}</Text>
+                                        </View>
+
+                                        {/* User Stats Row */}
+                                        <View style={styles.userStatsRow}>
+                                            <View style={styles.userStatItem}>
+                                                <Text style={styles.userStatLabel}>Sales</Text>
+                                                <Text style={[styles.userStatValue, { color: '#3a48c2' }]}>
+                                                    {formatCurrency(user.total_sales)}
+                                                </Text>
+                                            </View>
+
+                                            <View style={styles.userStatDivider} />
+
+                                            <View style={styles.userStatItem}>
+                                                <Text style={styles.userStatLabel}>Winning</Text>
+                                                <Text style={[styles.userStatValue, { color: '#189b39ff' }]}>
+                                                    {formatCurrency(user.total_winning)}
+                                                </Text>
+                                            </View>
+
+                                            <View style={styles.userStatDivider} />
+
+                                            <View style={styles.userStatItem}>
+                                                <Text style={styles.userStatLabel}>Balance</Text>
+                                                <Text style={[styles.userStatValue, { color: '#dc2626' }]}>
+                                                    {formatCurrency(user.balance)}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
 
                     </View>
                 )}
@@ -231,9 +369,16 @@ const styles = StyleSheet.create({
         color: '#fff',
         letterSpacing: 0.5,
     },
-    headerPlaceholder: {
+    printButton: {
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        padding: 10,
+        borderRadius: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
         width: 44,
         height: 44,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     dateRangeBadge: {
         flexDirection: 'row',
@@ -248,6 +393,22 @@ const styles = StyleSheet.create({
     },
     dateRangeText: {
         fontSize: 13,
+        color: 'rgba(255,255,255,0.9)',
+        fontWeight: '600',
+    },
+    categoryBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'center',
+        marginTop: 6,
+        gap: 6,
+        backgroundColor: 'rgba(255,255,255,0.12)',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        borderRadius: 20,
+    },
+    categoryBadgeText: {
+        fontSize: 12,
         color: 'rgba(255,255,255,0.9)',
         fontWeight: '600',
     },
@@ -308,37 +469,139 @@ const styles = StyleSheet.create({
         marginHorizontal: 16,
         marginBottom: 10,
     },
-    summaryGrid: {
-        flexDirection: 'column',
-        gap: 12,
-    },
-    summaryCard: {
-        width: '100%',
+    // ── Overall Summary Card ─────────────────────────────────────
+    overallCard: {
         backgroundColor: '#fff',
-        padding: 30,
-        borderRadius: 12,
+        borderRadius: 16,
+        padding: 18,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+        marginBottom: 16,
+    },
+    overallCardHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
+        gap: 8,
+        marginBottom: 16,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F0F0F5',
+    },
+    overallCardTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1a1a1a',
+    },
+    overallGrid: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    overallItem: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    overallIconBg: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
+    },
+    overallItemLabel: {
+        fontSize: 11,
+        color: '#888',
+        marginBottom: 4,
+    },
+    overallItemValue: {
+        fontSize: 15,
+        fontWeight: 'bold',
+    },
+    overallDivider: {
+        width: 1,
+        height: 50,
+        backgroundColor: '#F0F0F5',
+    },
+    // ── User-wise Split ──────────────────────────────────────────
+    userSectionContainer: {
+        marginTop: 4,
+    },
+    userSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12,
+        paddingHorizontal: 4,
+    },
+    userSectionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1a1a1a',
+    },
+    userCard: {
+        backgroundColor: '#fff',
+        borderRadius: 14,
+        padding: 14,
+        marginBottom: 10,
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
     },
-    summaryRow: {
+    userCardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 2,
-        gap: 6,
+        gap: 10,
+        marginBottom: 12,
+        paddingBottom: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F5F5FA',
     },
-    summaryValue: {
-        fontSize: 18,
+    userAvatar: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#3a48c2',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    userAvatarText: {
+        fontSize: 14,
         fontWeight: 'bold',
+        color: '#fff',
+    },
+    userCardName: {
+        fontSize: 15,
+        fontWeight: '700',
         color: '#1a1a1a',
     },
-    summaryLabel: {
+    userStatsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    userStatItem: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    userStatLabel: {
         fontSize: 11,
-        color: '#666',
+        color: '#888',
+        marginBottom: 4,
+    },
+    userStatValue: {
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    userStatDivider: {
+        width: 1,
+        height: 36,
+        backgroundColor: '#F0F0F5',
     },
 });
 
 export default WinningSummaryResultScreen;
+

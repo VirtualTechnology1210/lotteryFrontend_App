@@ -9,13 +9,16 @@ import {
     Alert,
     Platform,
     TouchableOpacity,
-    ToastAndroid
+    ToastAndroid,
+    Linking
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import { reportService } from '../services/reportService';
 import PrinterService from '../printer/PrinterService';
 import { formatSalesReportReceipt } from '../printer/cpclReceiptFormatter';
+import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import Share from 'react-native-share';
 
 // Memoized Report Item for FlatList performance
 const ReportItem = memo(({ item, formatDateTime, navigation }) => {
@@ -197,6 +200,7 @@ const ReportResultScreen = ({ navigation, route }) => {
     const [rawSalesData, setRawSalesData] = useState([]);
     const [summary, setSummary] = useState(null);
     const [isPrinting, setIsPrinting] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
 
     const fetchReport = useCallback(async () => {
         // Only show loading on initial load or empty data
@@ -345,6 +349,132 @@ const ReportResultScreen = ({ navigation, route }) => {
         );
     };
 
+    // Generate A4 PDF and share via WhatsApp
+    const handleWhatsAppShare = async () => {
+        if (rawSalesData.length === 0) {
+            Alert.alert('No Data', 'No sales data to share.');
+            return;
+        }
+
+        setIsSharing(true);
+        try {
+            const MAX_LOTTERY_PER_LINE = 3;
+
+            // Format lottery numbers: max 3 per line, comma separated
+            const formatLotteryNumbers = (desc) => {
+                if (!desc || desc === '-') return '-';
+                const numbers = desc.split(',').map(n => n.trim()).filter(Boolean);
+                if (numbers.length <= MAX_LOTTERY_PER_LINE) return numbers.join(',');
+                // Split into chunks of MAX_LOTTERY_PER_LINE
+                const lines = [];
+                for (let i = 0; i < numbers.length; i += MAX_LOTTERY_PER_LINE) {
+                    lines.push(numbers.slice(i, i + MAX_LOTTERY_PER_LINE).join(','));
+                }
+                return lines.join('<br>');
+            };
+
+            // Build table rows from rawSalesData
+            const tableRows = rawSalesData.map((item, index) => {
+                const productName = item.product_name || item.product_code || '-';
+                const lotteryDisplay = formatLotteryNumbers(item.desc);
+                const qty = item.qty || 0;
+                const bgColor = index % 2 === 0 ? '#ffffff' : '#f8f9fd';
+                return `
+                    <tr style="background-color: ${bgColor};">
+                        <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${index + 1}</td>
+                        <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555; font-weight: 500;">${productName}</td>
+                        <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 14px; color: #1a1a1a; font-weight: 600; letter-spacing: 1px;">${lotteryDisplay}</td>
+                        <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #333; text-align: center; font-weight: 600;">${qty}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            const totalQty = rawSalesData.reduce((sum, item) => sum + (parseInt(item.qty) || 0), 0);
+            const totalEntries = rawSalesData.length;
+
+            const dateRange = filters?.start_date && filters?.end_date
+                ? `${new Date(filters.start_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} — ${new Date(filters.end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+            const htmlContent = `
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        @page { size: A4; margin: 15mm; }
+                        body {
+                            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                            color: #222;
+                            margin: 0;
+                            padding: 0;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div style="background: linear-gradient(135deg, #3a48c2, #192f6a); color: #fff; padding: 20px 24px; border-radius: 12px; margin-bottom: 20px;">
+                        <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: 700;">Sales Report</h1>
+                        <p style="margin: 0; font-size: 14px; opacity: 0.85;">${dateRange}</p>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; background: #fff; border: 1px solid #f0f0f5; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; font-size: 15px;">
+                        <span>Total Entries: <strong style="color: #3a48c2;">${totalEntries}</strong></span>
+                        <span>Total Qty: <strong style="color: #3a48c2;">${totalQty}</strong></span>
+                    </div>
+
+                    <div style="margin-bottom: 24px;">
+                        <div style="background: #3a48c2; padding: 12px 18px; border-radius: 8px 8px 0 0; margin-bottom: 0; page-break-after: avoid;">
+                            <span style="font-size: 15px; font-weight: 700; color: #fff;">Sales Details</span>
+                            <span style="float: right; font-size: 13px; color: #fff; font-weight: 600;">${totalEntries} items | Qty: ${totalQty}</span>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border-radius: 0 0 8px 8px; overflow: hidden; border: 1px solid #eee;">
+                            <thead>
+                                <tr style="background: #f0f2ff;">
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: left;">#</th>
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: left;">Product</th>
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: left;">Lottery No</th>
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: center;">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>${tableRows}</tbody>
+                        </table>
+                    </div>
+                </body>
+                </html>
+            `;
+
+            const pdfOptions = {
+                html: htmlContent,
+                fileName: `Sales_Report_${Date.now()}`,
+                directory: 'Documents',
+                base64: false,
+                height: 842,
+                width: 595,
+            };
+
+            const pdf = await RNHTMLtoPDF.convert(pdfOptions);
+
+            if (pdf.filePath) {
+                await Share.open({
+                    url: `file://${pdf.filePath}`,
+                    type: 'application/pdf',
+                    social: Share.Social.WHATSAPP,
+                    title: 'Sales Report',
+                    message: `Sales Report (${dateRange})`,
+                });
+            }
+        } catch (error) {
+            // User cancelled share — ignore dismiss errors
+            if (error?.message !== 'User did not share' && !error?.message?.includes('dismiss')) {
+                console.error('[WhatsApp Share] Error:', error);
+                if (Platform.OS === 'android') {
+                    ToastAndroid.show('Failed to share report', ToastAndroid.SHORT);
+                }
+            }
+        } finally {
+            setIsSharing(false);
+        }
+    };
+
     const formatDateTime = (dateString) => {
         const date = new Date(dateString);
         return date.toLocaleDateString('en-IN', {
@@ -444,6 +574,20 @@ const ReportResultScreen = ({ navigation, route }) => {
                     }
                 />
             )}
+
+            {/* WhatsApp Floating Action Button */}
+            <TouchableOpacity
+                style={styles.whatsappFab}
+                onPress={handleWhatsAppShare}
+                activeOpacity={0.8}
+                disabled={isSharing || isLoading || rawSalesData.length === 0}
+            >
+                {isSharing ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                    <MaterialCommunityIcons name="whatsapp" size={28} color="#fff" />
+                )}
+            </TouchableOpacity>
         </View>
     );
 };
@@ -766,6 +910,23 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#3a48c2',
         fontWeight: '600',
+    },
+    whatsappFab: {
+        position: 'absolute',
+        bottom: 24,
+        right: 20,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#25D366',
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 6,
+        shadowColor: '#25D366',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.4,
+        shadowRadius: 6,
+        zIndex: 999,
     },
 });
 

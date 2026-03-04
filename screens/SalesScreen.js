@@ -676,7 +676,12 @@ const SalesScreen = ({ navigation }) => {
                     { text: 'Done', style: 'cancel' },
                     {
                         text: 'Print Receipt',
-                        onPress: () => handlePrintReceipt(invoiceNumber, itemsToPrint, username)
+                        onPress: async () => {
+                            // Print first, then share — running them simultaneously
+                            // causes Share.open() to interfere with the BLE connection
+                            await handlePrintReceipt(invoiceNumber, itemsToPrint, username);
+                            salesService.shareSalesData(invoiceNumber, itemsToPrint);
+                        }
                     }
                 ]
             );

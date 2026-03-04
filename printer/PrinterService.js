@@ -315,7 +315,7 @@ const connectBLE = async (printerDevice, retryCount = 0) => {
         }
 
         // Wait before connecting
-        const waitTime = retryCount > 0 ? 1000 + (retryCount * 500) : 500;
+        const waitTime = retryCount > 0 ? 1000 + (retryCount * 500) : 200;
         console.log('[BLE] Waiting', waitTime, 'ms before connecting...');
         await new Promise(resolve => setTimeout(resolve, waitTime));
 
@@ -326,7 +326,7 @@ const connectBLE = async (printerDevice, retryCount = 0) => {
         });
 
         console.log('[BLE] Connected, waiting for stability...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 300));
 
         console.log('[BLE] Discovering services...');
         await device.discoverAllServicesAndCharacteristics();
@@ -493,13 +493,13 @@ export const connectToPrinter = async (printerDevice) => {
  * Send raw bytes to BLE printer
  * @param {Object} connection - Connection object from connectToPrinter
  * @param {Uint8Array} bytes - Raw bytes to send
- * @param {number} chunkSize - Max bytes per write (default 20)
+ * @param {number} chunkSize - Max bytes per write (default 240)
  * @returns {Promise<boolean>} Success
  */
-const sendBLEBytes = async (connection, bytes, chunkSize = 20) => {
+const sendBLEBytes = async (connection, bytes, chunkSize = 240) => {
     const { device, characteristic } = connection;
 
-    console.log('[BLE] Sending', bytes.length, 'bytes to printer');
+    console.log('[BLE] Sending', bytes.length, 'bytes to printer (chunk:', chunkSize, ')');
 
     try {
         // Split into chunks to avoid MTU limitations
@@ -522,7 +522,7 @@ const sendBLEBytes = async (connection, bytes, chunkSize = 20) => {
 
             // Small delay between chunks to avoid overwhelming the printer
             if (i < totalChunks - 1) {
-                await new Promise(resolve => setTimeout(resolve, 50));
+                await new Promise(resolve => setTimeout(resolve, 10));
             }
         }
 

@@ -26,6 +26,9 @@ import { authService } from './services';
 import WinningScreen from './screens/WinningScreen';
 import WinningSummaryScreen from './screens/WinningSummaryScreen';
 import WinningSummaryResultScreen from './screens/WinningSummaryResultScreen';
+import DigitSummaryScreen from './screens/DigitSummaryScreen';
+import DigitSummaryResultScreen from './screens/DigitSummaryResultScreen';
+
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -38,6 +41,7 @@ const SCREEN_CONFIG = [
   { name: 'Sales', component: SalesScreen, icon: 'chart-line', permKey: 'sales' },
   { name: 'Winning', component: WinningScreen, icon: 'trophy-outline', permKey: 'winning' },
   { name: 'Winning Summary', component: WinningSummaryScreen, icon: 'chart-box-outline', permKey: 'winning' },
+  { name: 'Digit Summary', component: DigitSummaryScreen, icon: 'numeric', permKey: 'reports' },
   { name: 'Reports', component: ReportsScreen, icon: 'file-chart-outline', permKey: 'reports' },
   { name: 'Rate Summary', component: RateSummaryReportScreen, icon: 'calculator-variant-outline', permKey: 'reports' },
   { name: 'Users', component: UserScreen, icon: 'account-group-outline', permKey: 'users', adminOnly: true },
@@ -157,6 +161,7 @@ const App = () => {
           <Stack.Screen name="SaleEdit" component={SalesEditScreen} />
           <Stack.Screen name="PrinterSettings" component={PrinterSettingsScreen} />
           <Stack.Screen name="WinningSummaryResult" component={WinningSummaryResultScreen} />
+          <Stack.Screen name="DigitSummaryResult" component={DigitSummaryResultScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>

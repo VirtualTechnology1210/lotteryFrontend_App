@@ -219,7 +219,13 @@ const WinningScreen = ({ navigation }) => {
                     label: r.label,
                     suffix: r.suffix,
                     count: r.count,
-                    total_winning_amount: r.total_winning_amount
+                    total_winning_amount: r.total_winning_amount,
+                    matches: (r.matches || []).map(m => ({
+                        sold_by: m.sold_by || '-',
+                        total_winning_amount: m.total_winning_amount || 0,
+                        lottery_number: m.lottery_number || '',
+                        qty: m.qty || 1,
+                    }))
                 })) || [];
 
             const payload = {

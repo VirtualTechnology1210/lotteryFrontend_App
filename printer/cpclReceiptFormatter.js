@@ -620,6 +620,90 @@ export const formatRateSummaryReportReceipt = (reportData, _width = '80') => {
     }
 };
 
+/**
+ * Format winning summary receipt (CPCL) for TVS BLP 370.
+ *
+ * @param {Object} data
+ * @param {string} data.fromDate
+ * @param {string} data.toDate
+ * @param {Object} data.summary — {
+ *   total_sales_amount, total_winning_amount, total_balance,
+ *   user_wise: [{ user_name, total_sales, total_winning, balance }]
+ * }
+ * @returns {Uint8Array}
+ */
+export const formatWinningSummaryReceipt = (data, _width = '80') => {
+    try {
+        const summary = data?.summary || {};
+        const b = new CPCLBuilder();
+
+        // Column positions for 3-column layout
+        const X_LABEL = 10;
+        const X_VALUE = 300;
+
+        // ── Header ──────────────────────────────────────────────────────────
+        b.gap(12);
+        b.centerBold('======== D K ========', CFG.LINE_H_BOLD);
+        b.gap(10);
+        b.centerBold('Winning Summary', CFG.LINE_H_BOLD);
+        b.gap(10);
+
+        // ── Date range ───────────────────────────────────────────────────────
+        const fromTxt = `From: ${data.fromDate ? formatDate(data.fromDate) : '--'}`;
+        const toTxt = `To: ${data.toDate ? formatDate(data.toDate) : '--'}`;
+        b.splitLine(fromTxt, toTxt, true, CFG.LINE_H);
+        b.gap(10);
+
+        // ── Overall Summary ─────────────────────────────────────────────────
+        b.line(2);
+        b.centerBold('Overall Summary', CFG.LINE_H_BOLD);
+        b.line(1);
+        b.gap(4);
+
+        b.splitLine('Total Sales', String(Math.round(summary.total_sales_amount || 0)), false, CFG.LINE_H);
+        b.splitLine('Total Winning', String(Math.round(summary.total_winning_amount || 0)), false, CFG.LINE_H);
+        b.line(1);
+        b.splitLine('Balance', String(Math.round(summary.total_balance || 0)), true, CFG.LINE_H);
+        b.line(2);
+        b.gap(10);
+
+        // ── User-wise Split ──────────────────────────────────────────────────
+        const users = Array.isArray(summary.user_wise) ? summary.user_wise : [];
+        if (users.length > 0) {
+            b.centerBold('User-wise Split', CFG.LINE_H_BOLD);
+            b.line(1);
+            b.gap(4);
+
+            // Table header
+            b.cmd('SETBOLD 1');
+            b.textInline(X_LABEL, 'User');
+            b.textInline(X_VALUE, 'Sales/Winning/Balance');
+            b.y += CFG.LINE_H_BOLD;
+            b.cmd('SETBOLD 0');
+            b.line(1);
+
+            users.forEach(user => {
+                const name = str(user.user_name || '?');
+                b.bold(X_LABEL, name, CFG.LINE_H);
+
+                b.splitLine('  Sales', String(Math.round(user.total_sales || 0)), false, CFG.LINE_H);
+                b.splitLine('  Winning', String(Math.round(user.total_winning || 0)), false, CFG.LINE_H);
+                b.splitLine('  Balance', String(Math.round(user.balance || 0)), true, CFG.LINE_H);
+                b.line(1);
+            });
+        }
+
+        // ── Footer ───────────────────────────────────────────────────────────
+        addFooter(b);
+
+        return b.buildBytes();
+
+    } catch (e) {
+        console.error('[cpclReceiptFormatter] formatWinningSummaryReceipt error:', e);
+        return errorBytes('REPORT ERROR');
+    }
+};
+
 /** Convert bytes to hex string (debugging) */
 export const bytesToHex = (bytes, limit = 200) =>
     Array.from(bytes.slice(0, limit))
@@ -631,5 +715,6 @@ export default {
     formatSalesReceipt,
     formatSalesReportReceipt,
     formatRateSummaryReportReceipt,
+    formatWinningSummaryReceipt,
     bytesToHex,
 };

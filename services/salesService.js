@@ -1,4 +1,5 @@
 import apiClient from './index';
+import Share from 'react-native-share';
 
 export const salesService = {
     // Get all sales
@@ -41,5 +42,88 @@ export const salesService = {
     // Delete sale
     deleteSale: async (id) => {
         return apiClient.delete(`/sales/${id}`);
+    },
+    /**
+     * Share sales data in text format
+     * Format: Product Name - Lottery Numbers = Quantity
+     *
+     * Lottery numbers are grouped 4 per line and wrapped with aligned indentation.
+     * The quantity always appears at the end of the last lottery line.
+     * All columns (product, lottery, qty) are dynamically aligned across all items.
+     *
+     * Example output:
+     *   KL.110  -  1265                      = 1
+     *   Pol     -  2569,2596,2659,2695
+     *              2956,2965,5269,5296
+     *              9526,9562,9625,9652       = 24
+     */
+    shareSalesData: async (invoiceNo, items) => {
+        try {
+            const MAX_PER_LINE = 2; // lottery numbers per line
+
+            // ── Pre-process all items ──
+            const processed = items.map(item => {
+                const name = item.product_name || item.product_code || 'N/A';
+                const desc = item.desc || 'N/A';
+                const qty = String(item.qty || 0);
+                const numbers = desc.split(',').map(n => n.trim()).filter(Boolean);
+
+                // Group lottery numbers into chunks
+                const chunks = [];
+                for (let i = 0; i < numbers.length; i += MAX_PER_LINE) {
+                    chunks.push(numbers.slice(i, i + MAX_PER_LINE).join(','));
+                }
+                if (chunks.length === 0) chunks.push('N/A');
+
+                return { name, chunks, qty };
+            });
+
+            // ── Calculate dynamic column widths ──
+            const maxNameLen = Math.max(...processed.map(p => p.name.length), 4);
+            const maxLotteryLen = Math.max(
+                ...processed.flatMap(p => p.chunks.map(c => c.length)),
+                4
+            );
+            const maxQtyLen = Math.max(...processed.map(p => p.qty.length), 1);
+
+            // ── Build formatted lines ──
+            const dash = ' - ';
+            const eq = ' = ';
+            const indentLen = maxNameLen + dash.length;
+            const indent = ' '.repeat(indentLen);
+
+            const lines = [];
+
+            for (const { name, chunks, qty } of processed) {
+                const paddedName = name.padEnd(maxNameLen);
+                const paddedQty = qty.padStart(maxQtyLen);
+
+                for (let i = 0; i < chunks.length; i++) {
+                    const isFirst = i === 0;
+                    const isLast = i === chunks.length - 1;
+                    const prefix = isFirst ? `${paddedName}${dash}` : indent;
+                    const lottery = isLast
+                        ? chunks[i].padEnd(maxLotteryLen)
+                        : chunks[i];
+
+                    if (isLast) {
+                        lines.push(`${prefix}${lottery}${eq}${paddedQty}`);
+                    } else {
+                        lines.push(`${prefix}${lottery}`);
+                    }
+                }
+            }
+
+            const shareText = lines.join('\n');
+
+            await Share.open({
+                message: shareText,
+                title: 'Share Sale Details'
+            });
+        } catch (error) {
+            if (error && error.message !== 'User did not share' && !error.message?.includes('dismiss')) {
+                console.error('Share Error:', error);
+            }
+        }
     }
 };
