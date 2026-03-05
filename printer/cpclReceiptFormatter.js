@@ -112,6 +112,10 @@ const CFG = {
     LINE_H: 42,    // normal body line height (28 + 14 gap)
     LINE_H_BOLD: 46,    // bold / header line height
 
+    // Max label height before auto-pagination (dots).
+    // TVS BLP 370 buffer overflows around ~1600 dots; keep safe margin.
+    MAX_LABEL_H: 1400,
+
     // ── Table column X-positions (dots) ──────────────────────────────────────
     // Total usable: 556 dots  |  Font 4: 16 dots/char
     //
@@ -134,12 +138,17 @@ const CFG = {
 
 class CPCLBuilder {
     constructor() {
-        this.cmds = [];
+        this.entries = [];   // structured entries for auto-pagination
         this.y = 0;
     }
 
-    /** Append a raw CPCL command string */
-    cmd(line) { this.cmds.push(line); }
+    /**
+     * Append a raw CPCL command (state command like SETBOLD, CENTER, etc.)
+     * Stored with the current Y so pagination can assign it to the right page.
+     */
+    cmd(line) {
+        this.entries.push({ type: 'raw', content: line, y: this.y });
+    }
 
     /** Advance Y without printing anything */
     gap(dots) { this.y += dots; }
@@ -148,19 +157,28 @@ class CPCLBuilder {
 
     /** Print text at an absolute X position, then advance Y by lineHeight */
     text(x, txt, lineH = CFG.LINE_H) {
-        this.cmd(`TEXT ${CFG.FONT} ${CFG.ROT} ${x} ${this.y} ${txt}`);
+        this.entries.push({
+            type: 'text', font: CFG.FONT, rot: CFG.ROT,
+            x, y: this.y, text: String(txt),
+        });
         this.y += lineH;
     }
 
     /** Print text without advancing Y (for same-line multi-column rows) */
     textInline(x, txt) {
-        this.cmd(`TEXT ${CFG.FONT} ${CFG.ROT} ${x} ${this.y} ${txt}`);
+        this.entries.push({
+            type: 'text', font: CFG.FONT, rot: CFG.ROT,
+            x, y: this.y, text: String(txt),
+        });
     }
 
     /** Centered text, then advance Y */
     center(txt, lineH = CFG.LINE_H) {
         this.cmd('CENTER');
-        this.cmd(`TEXT ${CFG.FONT} ${CFG.ROT} 0 ${this.y} ${txt}`);
+        this.entries.push({
+            type: 'text', font: CFG.FONT, rot: CFG.ROT,
+            x: 0, y: this.y, text: String(txt),
+        });
         this.cmd('LEFT');
         this.y += lineH;
     }
@@ -175,7 +193,10 @@ class CPCLBuilder {
     /** Bold left-aligned text at X, then advance Y */
     bold(x, txt, lineH = CFG.LINE_H_BOLD) {
         this.cmd('SETBOLD 1');
-        this.cmd(`TEXT ${CFG.FONT} ${CFG.ROT} ${x} ${this.y} ${txt}`);
+        this.entries.push({
+            type: 'text', font: CFG.FONT, rot: CFG.ROT,
+            x, y: this.y, text: String(txt),
+        });
         this.cmd('SETBOLD 0');
         this.y += lineH;
     }
@@ -186,7 +207,9 @@ class CPCLBuilder {
     line(thickness = 2) {
         const x1 = CFG.MARGIN_L;
         const x2 = CFG.PRINT_WIDTH - CFG.MARGIN_R;
-        this.cmd(`LINE ${x1} ${this.y} ${x2} ${this.y} ${thickness}`);
+        this.entries.push({
+            type: 'line', x1, y1: this.y, x2, y2: this.y, thickness,
+        });
         this.y += thickness + 5;
     }
 
@@ -229,14 +252,102 @@ class CPCLBuilder {
 
     // ── Finalize ──────────────────────────────────────────────────────────────
 
-    /** Return complete CPCL command string */
-    build() {
-        const totalH = this.y + 50;   // 50-dot bottom padding / paper feed
-        let out = `! 0 200 200 ${totalH} 1\r\n`;
+    /**
+     * Render a single CPCL label from a list of entries.
+     * @param {Array} entries - structured entries
+     * @param {number} yOffset - Y offset to subtract (for pagination)
+     * @param {number} pageH - total label height
+     * @param {boolean} restoreBold - whether to start with SETBOLD 1
+     * @param {string} restoreAlign - alignment to restore ('LEFT' or 'CENTER')
+     * @returns {string} CPCL command block
+     */
+    _renderPage(entries, yOffset, pageH, restoreBold, restoreAlign) {
+        let out = `! 0 200 200 ${pageH} 1\r\n`;
         out += `PAGE-WIDTH ${CFG.PRINT_WIDTH}\r\n`;
-        this.cmds.forEach(c => { out += c + '\r\n'; });
+
+        // Restore formatting state from previous page
+        if (restoreBold) out += 'SETBOLD 1\r\n';
+        if (restoreAlign !== 'LEFT') out += restoreAlign + '\r\n';
+
+        for (const entry of entries) {
+            if (entry.type === 'text') {
+                const adjY = entry.y - yOffset;
+                out += `TEXT ${entry.font} ${entry.rot} ${entry.x} ${adjY} ${entry.text}\r\n`;
+            } else if (entry.type === 'line') {
+                const adjY1 = entry.y1 - yOffset;
+                const adjY2 = entry.y2 - yOffset;
+                out += `LINE ${entry.x1} ${adjY1} ${entry.x2} ${adjY2} ${entry.thickness}\r\n`;
+            } else {
+                // raw command (SETBOLD, CENTER, LEFT, SETMAG, etc.)
+                out += entry.content + '\r\n';
+            }
+        }
+
         out += 'FORM\r\n';
         out += 'PRINT\r\n';
+        return out;
+    }
+
+    /** Return complete CPCL command string (auto-paginates for large content) */
+    build() {
+        const totalH = this.y + 50;   // 50-dot bottom padding / paper feed
+        const MAX_H = CFG.MAX_LABEL_H;
+
+        // ── Single page: fits in one label ────────────────────────────────────
+        if (totalH <= MAX_H) {
+            return this._renderPage(this.entries, 0, totalH, false, 'LEFT');
+        }
+
+        // ── Multi-page: split entries across labels ───────────────────────────
+        const numPages = Math.ceil(totalH / MAX_H);
+        const pages = [];
+        for (let i = 0; i < numPages; i++) pages.push([]);
+
+        // Assign each entry to a page based on its Y position
+        for (const entry of this.entries) {
+            let entryY;
+            if (entry.type === 'text') entryY = entry.y;
+            else if (entry.type === 'line') entryY = entry.y1;
+            else entryY = entry.y;   // raw commands use stored Y
+
+            const pageIdx = Math.min(Math.floor(entryY / MAX_H), numPages - 1);
+            pages[pageIdx].push(entry);
+        }
+
+        // Build each page, tracking formatting state across pages
+        let out = '';
+        let prevBold = false;
+        let prevAlign = 'LEFT';
+
+        for (let p = 0; p < numPages; p++) {
+            const yOffset = p * MAX_H;
+            const pageCmds = pages[p];
+
+            // Calculate this page's actual max Y (for label height)
+            let pageMaxY = 0;
+            for (const entry of pageCmds) {
+                if (entry.type === 'text') {
+                    pageMaxY = Math.max(pageMaxY, (entry.y - yOffset) + CFG.LINE_H);
+                } else if (entry.type === 'line') {
+                    pageMaxY = Math.max(pageMaxY, (entry.y1 - yOffset) + entry.thickness + 5);
+                }
+            }
+            if (pageMaxY === 0) pageMaxY = MAX_H;
+            const pageH = pageMaxY + 50;
+
+            out += this._renderPage(pageCmds, yOffset, pageH, prevBold, prevAlign);
+
+            // Track formatting state at end of this page for next page
+            for (const entry of pageCmds) {
+                if (entry.type === 'raw') {
+                    if (entry.content === 'SETBOLD 1') prevBold = true;
+                    else if (entry.content === 'SETBOLD 0') prevBold = false;
+                    else if (entry.content === 'CENTER') prevAlign = 'CENTER';
+                    else if (entry.content === 'LEFT') prevAlign = 'LEFT';
+                }
+            }
+        }
+
         return out;
     }
 
@@ -250,7 +361,8 @@ class CPCLBuilder {
             else if (c < 2048) { bytes.push(192 | (c >> 6)); bytes.push(128 | (c & 63)); }
             else { bytes.push(224 | (c >> 12)); bytes.push(128 | ((c >> 6) & 63)); bytes.push(128 | (c & 63)); }
         }
-        console.log('[cpclReceiptFormatter] Generated', bytes.length, 'bytes');
+        const numPages = Math.ceil((this.y + 50) / CFG.MAX_LABEL_H);
+        console.log(`[cpclReceiptFormatter] Generated ${bytes.length} bytes, ${numPages} page(s)`);
         return new Uint8Array(bytes);
     }
 }

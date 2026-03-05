@@ -126,6 +126,11 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
             <View style={styles.reportHeader}>
                 <View style={styles.headerLeft}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {item.category_name && (
+                            <View style={[styles.codeBadge, { backgroundColor: '#E8F5E9', marginLeft: 4 }]}>
+                                <Text style={[styles.codeText, { color: '#2E7D32' }]}>{item.category_name}</Text>
+                            </View>
+                        )}
                         {item.product_code && (
                             <View style={styles.codeBadge}>
                                 <Text style={styles.codeText}>{item.product_code}</Text>
@@ -137,11 +142,6 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                                 <Text style={styles.invoiceText}>
                                     Invoice: {item.invoice_number}
                                 </Text>
-                            </View>
-                        )}
-                        {item.category_name && (
-                            <View style={[styles.codeBadge, { backgroundColor: '#E8F5E9', marginLeft: 4 }]}>
-                                <Text style={[styles.codeText, { color: '#2E7D32' }]}>{item.category_name}</Text>
                             </View>
                         )}
                     </View>
@@ -754,7 +754,7 @@ const styles = StyleSheet.create({
         borderRadius: 4,
     },
     codeText: {
-        fontSize: 15,
+        fontSize: 12,
         color: '#3a48c2',
         fontWeight: '600',
     },
@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
         alignSelf: 'flex-start',
     },
     invoiceText: {
-        fontSize: 15,
+        fontSize: 12,
         color: '#3a48c2',
         fontWeight: '700',
     },
@@ -815,8 +815,9 @@ const styles = StyleSheet.create({
     },
     descText: {
         fontSize: 13,
-        color: '#444',
+        color: '#000000ff',
         fontStyle: 'italic',
+        fontWeight: '700',
     },
     metaInfo: {
         flexDirection: 'row',

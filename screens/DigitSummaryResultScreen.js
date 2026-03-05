@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -10,12 +10,61 @@ import {
     RefreshControl,
     ToastAndroid,
     Alert,
+    FlatList,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import { reportService } from '../services/reportService';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import Share from 'react-native-share';
+
+// Memoized components for better performance
+const DigitRow = React.memo(({ item, index, isLast, formatCurrency }) => (
+    <View style={[styles.tableRow, isLast && styles.tableRowLast]}>
+        <Text style={[styles.tableCell, { flex: 0.4, color: '#9CA3AF' }]}>{index + 1}</Text>
+        <Text style={[styles.tableCellLottery, { flex: 1.5 }]}>{item.desc || '-'}</Text>
+        <Text style={[styles.tableCell, { flex: 1.2 }]} numberOfLines={1}>{item.product_name || item.product_code || '-'}</Text>
+        <Text style={[styles.tableCellQty, { flex: 0.6, textAlign: 'center' }]}>{item.qty || 0}</Text>
+        <Text style={[styles.tableCellAmount, { flex: 1.3, textAlign: 'right' }]}>{formatCurrency(item.total)}</Text>
+    </View>
+));
+
+const DigitGroupHeader = React.memo(({ digitCount, items, isExpanded, onToggle, formatCurrency }) => {
+    const totalQty = items.reduce((sum, i) => sum + (parseInt(i.qty) || 0), 0);
+    const totalAmount = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+
+    return (
+        <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={onToggle}
+            style={[
+                styles.userCardHeader,
+                { borderBottomWidth: isExpanded ? 1 : 0, paddingBottom: isExpanded ? 10 : 0 }
+            ]}
+        >
+            <View style={styles.groupHeaderLeft}>
+                <View style={styles.userAvatar}>
+                    <Text style={styles.userAvatarText}>{digitCount}D</Text>
+                </View>
+                <View>
+                    <Text style={styles.userCardName}>{digitCount}-Digit Numbers</Text>
+                    <Text style={styles.userCardSubtitle}>{items.length} entries</Text>
+                </View>
+            </View>
+            <View style={styles.groupHeaderRight}>
+                <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
+                    <Text style={styles.groupQtyLabel}>Qty: <Text style={styles.groupQtyValue}>{totalQty}</Text></Text>
+                    <Text style={styles.groupAmount}>{formatCurrency(totalAmount)}</Text>
+                </View>
+                <MaterialCommunityIcons
+                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={24}
+                    color="#3a48c2"
+                />
+            </View>
+        </TouchableOpacity>
+    );
+});
 
 const DigitSummaryResultScreen = ({ navigation, route }) => {
     const { filters } = route.params || {};
@@ -101,16 +150,16 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
         fetchData(false);
     };
 
-    const toggleGroup = (digit) => {
+    const toggleGroup = useCallback((digit) => {
         setExpandedGroups(prev => ({
             ...prev,
             [digit]: !prev[digit]
         }));
-    };
+    }, []);
 
-    const formatCurrency = (amount) => {
+    const formatCurrency = useCallback((amount) => {
         return `Rs. ${Math.round(parseFloat(amount) || 0).toLocaleString('en-IN')}`;
-    };
+    }, []);
 
     // Generate A4 PDF and share via WhatsApp
     const handleWhatsAppShare = async () => {
@@ -233,45 +282,103 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
         }
     };
 
-    const renderDigitGroup = (digitCount) => {
-        const items = digitGroups[digitCount] || [];
-        const isExpanded = expandedGroups[digitCount];
+    const totalEntries = useMemo(() =>
+        Object.values(digitGroups).reduce((s, g) => s + g.length, 0),
+        [digitGroups]);
 
-        const totalQty = items.reduce((sum, i) => sum + (parseInt(i.qty) || 0), 0);
-        const totalAmount = items.reduce((sum, i) => sum + (parseFloat(i.total) || 0), 0);
+    // Flattening the data for FlatList to enable virtualization
+    const flattenedListData = useMemo(() => {
+        if (totalEntries === 0) return [{ type: 'empty' }];
 
-        return (
-            <View key={digitCount} style={styles.userCard}>
-                <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => toggleGroup(digitCount)}
-                    style={[styles.userCardHeader, { borderBottomWidth: isExpanded ? 1 : 0 }]}
-                >
-                    <View style={styles.groupHeaderLeft}>
-                        <View style={styles.userAvatar}>
-                            <Text style={styles.userAvatarText}>{digitCount}D</Text>
+        const data = [];
+        // Header info
+        data.push({ type: 'overall_card' });
+        data.push({ type: 'section_header' });
+
+        [4, 3, 2, 1].forEach(d => {
+            const items = digitGroups[d] || [];
+            if (items.length > 0) {
+                const isExpanded = !!expandedGroups[d];
+                data.push({ type: 'group_header', digit: d, items, isExpanded });
+
+                if (isExpanded) {
+                    data.push({ type: 'table_header' });
+                    items.forEach((item, index) => {
+                        data.push({
+                            type: 'group_row',
+                            digit: d,
+                            item,
+                            index,
+                            isLast: index === items.length - 1
+                        });
+                    });
+                }
+            }
+        });
+
+        return data;
+    }, [digitGroups, expandedGroups, totalEntries]);
+
+    const renderListData = ({ item }) => {
+        switch (item.type) {
+            case 'overall_card':
+                return (
+                    <View style={styles.overallCard}>
+                        <View style={styles.overallCardHeader}>
+                            <MaterialCommunityIcons name="chart-box-outline" size={20} color="#3a48c2" />
+                            <Text style={styles.overallCardTitle}>Overall Summary</Text>
                         </View>
-                        <View>
-                            <Text style={styles.userCardName}>{digitCount}-Digit Numbers</Text>
-                            <Text style={styles.userCardSubtitle}>{items.length} entries</Text>
+
+                        <View style={styles.overallGrid}>
+                            <View style={styles.overallItem}>
+                                <Text style={styles.overallItemLabel}>Total Entries</Text>
+                                <Text style={[styles.overallItemValue, { color: '#3a48c2' }]}>
+                                    {totalEntries}
+                                </Text>
+                            </View>
+
+                            <View style={styles.overallDivider} />
+
+                            <View style={styles.overallItem}>
+                                <Text style={styles.overallItemLabel}>Total Qty</Text>
+                                <Text style={[styles.overallItemValue, { color: '#1a1a1a' }]}>
+                                    {salesData.reduce((s, i) => s + (parseInt(i.qty) || 0), 0)}
+                                </Text>
+                            </View>
+
+                            <View style={styles.overallDivider} />
+
+                            <View style={styles.overallItem}>
+                                <Text style={styles.overallItemLabel}>Total Amount</Text>
+                                <Text style={[styles.overallItemValue, { color: '#189b39' }]}>
+                                    {formatCurrency(salesData.reduce((s, i) => s + (parseFloat(i.total) || 0), 0))}
+                                </Text>
+                            </View>
                         </View>
                     </View>
-                    <View style={styles.groupHeaderRight}>
-                        <View style={{ alignItems: 'flex-end', marginRight: 10 }}>
-                            <Text style={styles.groupQtyLabel}>Qty: <Text style={styles.groupQtyValue}>{totalQty}</Text></Text>
-                            <Text style={styles.groupAmount}>{formatCurrency(totalAmount)}</Text>
-                        </View>
-                        <MaterialCommunityIcons
-                            name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                            size={24}
-                            color="#3a48c2"
+                );
+            case 'section_header':
+                return (
+                    <View style={styles.userSectionHeader}>
+                        <MaterialCommunityIcons name="format-list-numbered" size={20} color="#3a48c2" />
+                        <Text style={styles.userSectionTitle}>Digit-wise Breakup</Text>
+                    </View>
+                );
+            case 'group_header':
+                return (
+                    <View style={[styles.userCard, item.isExpanded && { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }]}>
+                        <DigitGroupHeader
+                            digitCount={item.digit}
+                            items={item.items}
+                            isExpanded={item.isExpanded}
+                            onToggle={() => toggleGroup(item.digit)}
+                            formatCurrency={formatCurrency}
                         />
                     </View>
-                </TouchableOpacity>
-
-                {isExpanded && items.length > 0 && (
-                    <View style={styles.groupContent}>
-                        {/* Table Header */}
+                );
+            case 'table_header':
+                return (
+                    <View style={[styles.userCard, { marginTop: 0, paddingTop: 0, marginBottom: 0, borderRadius: 0, elevation: 2 }]}>
                         <View style={styles.tableHeaderRow}>
                             <Text style={[styles.tableHeaderText, { flex: 0.4 }]}>No</Text>
                             <Text style={[styles.tableHeaderText, { flex: 1.5 }]}>Lottery</Text>
@@ -279,29 +386,36 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
                             <Text style={[styles.tableHeaderText, { flex: 0.6, textAlign: 'center' }]}>Qty</Text>
                             <Text style={[styles.tableHeaderText, { flex: 1.3, textAlign: 'right' }]}>Amount</Text>
                         </View>
-
-                        {items.map((item, index) => (
-                            <View
-                                key={`${digitCount}-${index}`}
-                                style={[
-                                    styles.tableRow,
-                                    index === items.length - 1 && styles.tableRowLast
-                                ]}
-                            >
-                                <Text style={[styles.tableCell, { flex: 0.4, color: '#9CA3AF' }]}>{index + 1}</Text>
-                                <Text style={[styles.tableCellLottery, { flex: 1.5 }]}>{item.desc || '-'}</Text>
-                                <Text style={[styles.tableCell, { flex: 1.2 }]} numberOfLines={1}>{item.product_name || item.product_code || '-'}</Text>
-                                <Text style={[styles.tableCellQty, { flex: 0.6, textAlign: 'center' }]}>{item.qty || 0}</Text>
-                                <Text style={[styles.tableCellAmount, { flex: 1.3, textAlign: 'right' }]}>{formatCurrency(item.total)}</Text>
-                            </View>
-                        ))}
                     </View>
-                )}
-            </View>
-        );
+                );
+            case 'group_row':
+                return (
+                    <View style={[
+                        styles.userCard,
+                        { marginTop: 0, paddingTop: 0, borderRadius: 0, marginBottom: 0, elevation: 2 },
+                        item.isLast && { borderBottomLeftRadius: 14, borderBottomRightRadius: 14, marginBottom: 10, paddingBottom: 10 }
+                    ]}>
+                        <DigitRow
+                            item={item.item}
+                            index={item.index}
+                            isLast={item.isLast}
+                            formatCurrency={formatCurrency}
+                        />
+                    </View>
+                );
+            case 'empty':
+                return (
+                    <View style={styles.emptyContainer}>
+                        <MaterialCommunityIcons name="numeric-off" size={60} color="#D1D5DB" />
+                        <Text style={styles.emptyTitle}>No Numbers Found</Text>
+                        <Text style={styles.emptyText}>No lottery numbers match your filters.</Text>
+                    </View>
+                );
+            default:
+                return null;
+        }
     };
 
-    const totalEntries = Object.values(digitGroups).reduce((s, g) => s + g.length, 0);
 
     return (
         <View style={styles.container}>
@@ -336,8 +450,15 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
                     <Text style={styles.loadingText}>Analyzing digits...</Text>
                 </View>
             ) : (
-                <ScrollView
-                    style={styles.scrollView}
+                <FlatList
+                    data={flattenedListData}
+                    renderItem={renderListData}
+                    keyExtractor={(item, index) => {
+                        if (item.type === 'group_row') return `row-${item.digit}-${item.index}`;
+                        if (item.type === 'group_header') return `header-${item.digit}`;
+                        return `${item.type}-${index}`;
+                    }}
+                    contentContainerStyle={styles.flatListContent}
                     refreshControl={
                         <RefreshControl
                             refreshing={refreshing}
@@ -345,66 +466,7 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
                             colors={['#3a48c2']}
                         />
                     }
-                >
-                    <View style={styles.summaryContainer}>
-                        {/* Overall Summary Card */}
-                        <View style={styles.overallCard}>
-                            <View style={styles.overallCardHeader}>
-                                <MaterialCommunityIcons name="chart-box-outline" size={20} color="#3a48c2" />
-                                <Text style={styles.overallCardTitle}>Overall Summary</Text>
-                            </View>
-
-                            <View style={styles.overallGrid}>
-                                <View style={styles.overallItem}>
-                                    <Text style={styles.overallItemLabel}>Total Entries</Text>
-                                    <Text style={[styles.overallItemValue, { color: '#3a48c2' }]}>
-                                        {totalEntries}
-                                    </Text>
-                                </View>
-
-                                <View style={styles.overallDivider} />
-
-                                <View style={styles.overallItem}>
-                                    <Text style={styles.overallItemLabel}>Total Qty</Text>
-                                    <Text style={[styles.overallItemValue, { color: '#1a1a1a' }]}>
-                                        {salesData.reduce((s, i) => s + (parseInt(i.qty) || 0), 0)}
-                                    </Text>
-                                </View>
-
-                                <View style={styles.overallDivider} />
-
-                                <View style={styles.overallItem}>
-                                    <Text style={styles.overallItemLabel}>Total Amount</Text>
-                                    <Text style={[styles.overallItemValue, { color: '#189b39' }]}>
-                                        {formatCurrency(salesData.reduce((s, i) => s + (parseFloat(i.total) || 0), 0))}
-                                    </Text>
-                                </View>
-                            </View>
-                        </View>
-
-                        {/* Digit Groups */}
-                        <View style={styles.userSectionContainer}>
-                            {totalEntries === 0 ? (
-                                <View style={styles.emptyContainer}>
-                                    <MaterialCommunityIcons name="numeric-off" size={60} color="#D1D5DB" />
-                                    <Text style={styles.emptyTitle}>No Numbers Found</Text>
-                                    <Text style={styles.emptyText}>No lottery numbers match your filters.</Text>
-                                </View>
-                            ) : (
-                                <>
-                                    <View style={styles.userSectionHeader}>
-                                        <MaterialCommunityIcons name="format-list-numbered" size={20} color="#3a48c2" />
-                                        <Text style={styles.userSectionTitle}>Digit-wise Breakup</Text>
-                                    </View>
-                                    {[4, 3, 2, 1].filter(d => (digitGroups[d] || []).length > 0).map(d => renderDigitGroup(d))}
-                                </>
-                            )}
-                        </View>
-                    </View>
-
-                    {/* Bottom Spacing */}
-                    <View style={{ height: 80 }} />
-                </ScrollView>
+                />
             )}
 
             {/* WhatsApp Floating Action Button */}
@@ -502,6 +564,10 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: 'rgba(255,255,255,0.9)',
         fontWeight: '600',
+    },
+    flatListContent: {
+        paddingHorizontal: 16,
+        paddingBottom: 100,
     },
     scrollView: {
         flex: 1,
