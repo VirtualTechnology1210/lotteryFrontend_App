@@ -16,6 +16,8 @@ import LinearGradient from 'react-native-linear-gradient';
 import { winningService } from '../services/winningService';
 import PrinterService from '../printer/PrinterService';
 import { formatWinningSummaryReceipt } from '../printer/cpclReceiptFormatter';
+import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import Share from 'react-native-share';
 
 const WinningSummaryResultScreen = ({ navigation, route }) => {
     // Get filter params from navigation (same pattern as ReportResultScreen)
@@ -31,6 +33,7 @@ const WinningSummaryResultScreen = ({ navigation, route }) => {
     const [summary, setSummary] = useState(null);
     const [error, setError] = useState(null);
     const [isPrinting, setIsPrinting] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
 
 
     const formatDisplayDate = (dateStr) => {
@@ -133,6 +136,107 @@ const WinningSummaryResultScreen = ({ navigation, route }) => {
                 }
             ]
         );
+    };
+
+    // Generate A4 PDF and share via WhatsApp
+    const handleWhatsAppShare = async () => {
+        if (!summary || (summary.total_entries === 0 && (summary.total_sales_amount || 0) === 0)) {
+            Alert.alert('No Data', 'No summary data to share.');
+            return;
+        }
+
+        setIsSharing(true);
+        try {
+            let userRows = '';
+            if (summary.user_wise && summary.user_wise.length > 0) {
+                userRows = summary.user_wise.map((user, index) => {
+                    const bgColor = index % 2 === 0 ? '#ffffff' : '#f8f9fd';
+                    return `
+                        <tr style="background-color: ${bgColor};">
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${index + 1}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 14px; color: #1a1a1a; font-weight: 600;">${user.user_name || '-'}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #3a48c2; text-align: right; font-weight: 600;">${Math.round(parseFloat(user.total_sales) || 0).toLocaleString('en-IN')}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #189b39; text-align: right; font-weight: 600;">${Math.round(parseFloat(user.total_winning) || 0).toLocaleString('en-IN')}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #dc2626; text-align: right; font-weight: 700;">${Math.round(parseFloat(user.balance) || 0).toLocaleString('en-IN')}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            const htmlContent = `
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        @page { size: A4; margin: 15mm; }
+                        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #222; margin: 0; padding: 0; }
+                    </style>
+                </head>
+                <body>
+                    <div style="background: linear-gradient(135deg, #3a48c2, #192f6a); color: #fff; padding: 20px 24px; border-radius: 12px; margin-bottom: 20px;">
+                        <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: 700;">Winning Summary Report</h1>
+                        <p style="margin: 0; font-size: 14px; opacity: 0.85;">${dateRangeLabel} | ${categoryName || 'All Categories'}</p>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; background: #fff; border: 1px solid #f0f0f5; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; font-size: 15px;">
+                        <span>Total Sales: <strong style="color: #3a48c2;">${formatCurrency(summary.total_sales_amount)}</strong></span>
+                        <span>Total Winning: <strong style="color: #189b39;">${formatCurrency(summary.total_winning_amount)}</strong></span>
+                        <span>Balance: <strong style="color: #dc2626;">${formatCurrency(summary.total_balance)}</strong></span>
+                    </div>
+
+                    ${userRows ? `
+                    <div style="margin-bottom: 24px;">
+                        <div style="background: #3a48c2; padding: 12px 18px; border-radius: 8px 8px 0 0; margin-bottom: 0;">
+                            <span style="font-size: 15px; font-weight: 700; color: #fff;">User-wise Split</span>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border-radius: 0 0 8px 8px; overflow: hidden; border: 1px solid #eee;">
+                            <thead>
+                                <tr style="background: #f0f2ff;">
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: left;">#</th>
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: left;">User</th>
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: right;">Sales</th>
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: right;">Winning</th>
+                                    <th style="padding: 10px 14px; font-size: 12px; font-weight: 700; color: #3a48c2; text-transform: uppercase; text-align: right;">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>${userRows}</tbody>
+                        </table>
+                    </div>
+                    ` : ''}
+                </body>
+                </html>
+            `;
+
+            const pdfOptions = {
+                html: htmlContent,
+                fileName: `Winning_Summary_${Date.now()}`,
+                directory: 'Documents',
+                base64: false,
+                height: 842,
+                width: 595,
+            };
+
+            const pdf = await RNHTMLtoPDF.convert(pdfOptions);
+
+            if (pdf.filePath) {
+                await Share.open({
+                    url: `file://${pdf.filePath}`,
+                    type: 'application/pdf',
+                    social: Share.Social.WHATSAPP,
+                    title: 'Winning Summary Report',
+                    message: `Winning Summary Report (${dateRangeLabel})`,
+                });
+            }
+        } catch (error) {
+            if (error?.message !== 'User did not share' && !error?.message?.includes('dismiss')) {
+                console.error('[WhatsApp Share] Error:', error);
+                if (Platform.OS === 'android') {
+                    ToastAndroid.show('Failed to share report', ToastAndroid.SHORT);
+                }
+            }
+        } finally {
+            setIsSharing(false);
+        }
     };
 
     return (
@@ -312,6 +416,20 @@ const WinningSummaryResultScreen = ({ navigation, route }) => {
 
                 <View style={{ height: 30 }} />
             </ScrollView>
+
+            {/* WhatsApp Floating Action Button */}
+            <TouchableOpacity
+                style={styles.whatsappFab}
+                onPress={handleWhatsAppShare}
+                activeOpacity={0.8}
+                disabled={isSharing || isLoading || !summary || (summary.total_entries === 0 && (summary.total_sales_amount || 0) === 0)}
+            >
+                {isSharing ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                    <MaterialCommunityIcons name="whatsapp" size={28} color="#fff" />
+                )}
+            </TouchableOpacity>
         </View>
     );
 };
@@ -600,6 +718,23 @@ const styles = StyleSheet.create({
         width: 1,
         height: 36,
         backgroundColor: '#F0F0F5',
+    },
+    whatsappFab: {
+        position: 'absolute',
+        bottom: 24,
+        right: 20,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#25D366',
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 6,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        zIndex: 999,
     },
 });
 

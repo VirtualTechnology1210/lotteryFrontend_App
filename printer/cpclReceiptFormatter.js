@@ -699,7 +699,7 @@ export const formatRateSummaryReportReceipt = (reportData, _width = '80') => {
 
         // ── Rows ─────────────────────────────────────────────────────────────
         reportItems.forEach(item => {
-            const rateStr = `₹${Math.round(item.rate)}`;
+            const rateStr = String(Math.round(item.rate));
             const qtyStr = String(item.total_quantity);
             const amountStr = String(Math.round(item.total_amount));
 

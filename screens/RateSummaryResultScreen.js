@@ -15,6 +15,8 @@ import { reportService } from '../services/reportService';
 import PrinterService from '../printer/PrinterService';
 import { formatRateSummaryReportReceipt } from '../printer/cpclReceiptFormatter';
 import { ToastAndroid } from 'react-native';
+import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import Share from 'react-native-share';
 
 const RateSummaryResultScreen = ({ navigation, route }) => {
     const { filters } = route.params || {};
@@ -22,6 +24,7 @@ const RateSummaryResultScreen = ({ navigation, route }) => {
     const [reportData, setReportData] = useState([]);
     const [summary, setSummary] = useState(null);
     const [isPrinting, setIsPrinting] = useState(false);
+    const [isSharing, setIsSharing] = useState(false);
 
     const fetchReport = useCallback(async () => {
         setIsLoading(true);
@@ -99,6 +102,115 @@ const RateSummaryResultScreen = ({ navigation, route }) => {
         );
     };
 
+    const formatDisplayDate = (dateStr) => {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        });
+    };
+
+    const isSameDay = filters?.start_date && filters?.end_date && filters.start_date === filters.end_date;
+    const dateRangeText = filters?.start_date && filters?.end_date
+        ? isSameDay ? formatDisplayDate(filters.start_date) : `${formatDisplayDate(filters.start_date)} — ${formatDisplayDate(filters.end_date)}`
+        : formatDisplayDate(new Date().toISOString());
+
+    // Generate A4 PDF and share via WhatsApp
+    const handleWhatsAppShare = async () => {
+        if (reportData.length === 0) {
+            Alert.alert('No Data', 'No data to share.');
+            return;
+        }
+
+        setIsSharing(true);
+        try {
+            const rows = reportData.map((item, index) => {
+                const bgColor = index % 2 === 0 ? '#ffffff' : '#f8f9fd';
+                return `
+                    <tr style="background-color: ${bgColor};">
+                        <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${index + 1}</td>
+                        <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 14px; color: #1a1a1a; font-weight: 600;">${item.rate}</td>
+                        <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #444; text-align: center; font-weight: 600;">${item.total_quantity}</td>
+                        <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #15803d; text-align: right; font-weight: 700;">${Math.round(parseFloat(item.total_amount) || 0).toLocaleString('en-IN')}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            const userNameDisplay = route.params?.userName && route.params?.userName !== 'All' ? ` | User: ${route.params?.userName}` : '';
+
+            const htmlContent = `
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        @page { size: A4; margin: 15mm; }
+                        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #222; margin: 0; padding: 0; }
+                    </style>
+                </head>
+                <body>
+                    <div style="background: linear-gradient(135deg, #3a48c2, #192f6a); color: #fff; padding: 20px 24px; border-radius: 12px; margin-bottom: 20px;">
+                        <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: 700;">Rate Summary Report</h1>
+                        <p style="margin: 0; font-size: 14px; opacity: 0.85;">${dateRangeText}${userNameDisplay}</p>
+                    </div>
+
+                    ${summary ? `
+                    <div style="display: flex; justify-content: space-between; background: #fff; border: 1px solid #f0f0f5; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; font-size: 15px;">
+                        <span>Total Qty: <strong style="color: #3a48c2;">${summary.total_quantity}</strong></span>
+                        <span>Total Amount: <strong style="color: #c2410c;">${Math.round(parseFloat(summary.total_amount) || 0).toLocaleString('en-IN')}</strong></span>
+                    </div>
+                    ` : ''}
+
+                    <div style="margin-bottom: 24px;">
+                        <table style="width: 100%; border-collapse: collapse; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border-radius: 8px; overflow: hidden; border: 1px solid #eee;">
+                            <thead>
+                                <tr style="background: #3a48c2;">
+                                    <th style="padding: 12px 14px; font-size: 12px; font-weight: 700; color: #fff; text-transform: uppercase; text-align: left;">#</th>
+                                    <th style="padding: 12px 14px; font-size: 12px; font-weight: 700; color: #fff; text-transform: uppercase; text-align: left;">Rate</th>
+                                    <th style="padding: 12px 14px; font-size: 12px; font-weight: 700; color: #fff; text-transform: uppercase; text-align: center;">Qty</th>
+                                    <th style="padding: 12px 14px; font-size: 12px; font-weight: 700; color: #fff; text-transform: uppercase; text-align: right;">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </body>
+                </html>
+            `;
+
+            const pdfOptions = {
+                html: htmlContent,
+                fileName: `Rate_Summary_${Date.now()}`,
+                directory: 'Documents',
+                base64: false,
+                height: 842,
+                width: 595,
+            };
+
+            const pdf = await RNHTMLtoPDF.convert(pdfOptions);
+
+            if (pdf.filePath) {
+                await Share.open({
+                    url: `file://${pdf.filePath}`,
+                    type: 'application/pdf',
+                    social: Share.Social.WHATSAPP,
+                    title: 'Rate Summary Report',
+                    message: `Rate Summary Report (${dateRangeText})`,
+                });
+            }
+        } catch (error) {
+            if (error?.message !== 'User did not share' && !error?.message?.includes('dismiss')) {
+                console.error('[WhatsApp Share] Error:', error);
+                if (Platform.OS === 'android') {
+                    ToastAndroid.show('Failed to share report', ToastAndroid.SHORT);
+                }
+            }
+        } finally {
+            setIsSharing(false);
+        }
+    };
+
     const renderHeader = () => (
         <View style={styles.tableHeader}>
             <Text style={[styles.headerText, styles.colRate]}>Rate</Text>
@@ -109,9 +221,9 @@ const RateSummaryResultScreen = ({ navigation, route }) => {
 
     const renderItem = ({ item }) => (
         <View style={styles.tableRow}>
-            <Text style={[styles.rowText, styles.colRate]}>Rs.{item.rate}</Text>
+            <Text style={[styles.rowText, styles.colRate]}>{item.rate}</Text>
             <Text style={[styles.rowText, styles.colQty]}>{item.total_quantity}</Text>
-            <Text style={[styles.rowText, styles.colTotal, styles.amountText]}>Rs.{item.total_amount}</Text>
+            <Text style={[styles.rowText, styles.colTotal, styles.amountText]}>{item.total_amount}</Text>
         </View>
     );
 
@@ -130,7 +242,7 @@ const RateSummaryResultScreen = ({ navigation, route }) => {
                     <View style={styles.summaryCard}>
                         <View style={styles.summaryRow}>
                             <MaterialCommunityIcons name="cash-multiple" size={24} color="#c2410c" />
-                            <Text style={styles.summaryValue}>Rs.{summary.total_amount}</Text>
+                            <Text style={styles.summaryValue}>{summary.total_amount}</Text>
                         </View>
                         <Text style={styles.summaryLabel}>Total Amount</Text>
                     </View>
@@ -196,6 +308,20 @@ const RateSummaryResultScreen = ({ navigation, route }) => {
                     }
                 />
             )}
+
+            {/* WhatsApp Floating Action Button */}
+            <TouchableOpacity
+                style={styles.whatsappFab}
+                onPress={handleWhatsAppShare}
+                activeOpacity={0.8}
+                disabled={isSharing || isLoading || reportData.length === 0}
+            >
+                {isSharing ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                    <MaterialCommunityIcons name="whatsapp" size={28} color="#fff" />
+                )}
+            </TouchableOpacity>
         </View>
     );
 };
@@ -383,6 +509,23 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#bbb',
         marginTop: 5,
+    },
+    whatsappFab: {
+        position: 'absolute',
+        bottom: 24,
+        right: 20,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#25D366',
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 6,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        zIndex: 999,
     },
 });
 

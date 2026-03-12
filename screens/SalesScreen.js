@@ -31,7 +31,7 @@ import { formatSalesReceipt } from '../printer/cpclReceiptFormatter';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Memoized Category Card for better performance
-const CategoryCard = memo(({ category, index, isSelected, onPress }) => {
+const CategoryCard = memo(({ category, index, isSelected, onPress, disabled }) => {
     const [imageLoading, setImageLoading] = useState(true);
     const [imageError, setImageError] = useState(false);
 
@@ -56,9 +56,11 @@ const CategoryCard = memo(({ category, index, isSelected, onPress }) => {
         <TouchableOpacity
             style={[
                 styles.categoryCard,
-                isSelected && styles.categoryCardSelected
+                isSelected && styles.categoryCardSelected,
+                disabled && { opacity: 0.4 }
             ]}
             onPress={onPress}
+            disabled={disabled}
         >
             {showImage ? (
                 <View style={styles.categoryImageContainer}>
@@ -148,40 +150,88 @@ const ProductItem = memo(({ product, onSelect }) => {
 });
 
 // Cart Item Component
-const CartItem = memo(({ item, index, onRemove, onEditDesc }) => {
+const CartItem = memo(({ item, index, onSelectProduct, onRemove, onLotteryNoChange, onQtyChange }) => {
+    // Calculate required max length for the lottery input based on digits/index type
+    const getReqLen = () => {
+        const idx = item.index_type?.toUpperCase();
+        if (idx) {
+            if (['A', 'B', 'C'].includes(idx)) return 1;
+            if (['AB', 'BC', 'AC'].includes(idx)) return 2;
+        }
+        return item.digit_type || 0;
+    };
+    const maxLen = getReqLen();
+
+    // Warning condition: length > 0 and length < required max length
+    const showWarning = maxLen > 0 && typeof item.lotteryNo === 'string' && item.lotteryNo.length > 0 && item.lotteryNo.length < maxLen;
+
     return (
-        <View style={styles.cartItem}>
-            <View style={styles.cartItemTopRow}>
-                <View style={styles.cartItemInfo}>
-                    <Text style={styles.cartItemName} numberOfLines={1}>
-                        {item.product_name}
-                        {item.box === 1 && <Text style={styles.boxLabel}> [Box{item.index_type ? `-${item.index_type}` : ''}]</Text>}
-                        {!item.box && item.index_type && <Text style={[styles.boxLabel, { color: '#7c3aed' }]}> [{item.index_type}]</Text>}
+        <View style={styles.cartRowContainer}>
+            <View style={styles.cartRowTop}>
+                <TouchableOpacity style={styles.cartRowProduct} onPress={() => onSelectProduct(index)}>
+                    <Text style={item.product_name ? styles.cartRowProductText : styles.cartRowProductTextPlaceholder} numberOfLines={1}>
+                        {item.product_name || 'Products'}
                     </Text>
-                    <Text style={styles.cartItemPrice}>₹{Math.round(item.price)} × {item.qty}</Text>
+                    {item.box === 1 && !item.index_type && <MaterialCommunityIcons name="cube-outline" size={12} color="#7c3aed" style={{ marginLeft: 4 }} />}
+                    {item.index_type && <Text style={{ color: '#7c3aed', fontSize: 10, marginLeft: 4, fontWeight: 'bold' }}>[{item.index_type}]</Text>}
+                </TouchableOpacity>
+
+                <TextInput
+                    style={[styles.cartRowInputQty, (item.box === 1 && !item.index_type) && { backgroundColor: '#E8E8E8' }]}
+                    placeholder="Qty"
+                    value={String(item.qty || '')}
+                    onChangeText={(text) => onQtyChange(text, index)}
+                    keyboardType="numeric"
+                    editable={!!item.product_id && !(item.box === 1 && !item.index_type)}
+                />
+
+                <View style={styles.cartRowAmount}>
+                    <Text style={styles.cartRowAmountText}>₹{Math.round((item.price || 0) * (parseInt(item.qty) || 0))}</Text>
                 </View>
-                <Text style={styles.cartItemTotal}>₹{Math.round(item.price * item.qty)}</Text>
+
+                <TouchableOpacity style={styles.cartRowAction} onPress={() => onRemove(index)}>
+                    <MaterialCommunityIcons name="close-circle" size={25} color="#dc2626" />
+                </TouchableOpacity>
             </View>
-            <View style={styles.cartItemBottomRow}>
-                <View style={styles.cartItemDescWrapper}>
-                    {item.desc ? (
-                        <Text style={styles.cartItemDescText} numberOfLines={3}>
-                            <Text style={{ color: '#888' }}>Lottery No: </Text>
-                            {item.desc}
+            <View style={[styles.cartRowBottom, { alignItems: 'flex-start' }]}>
+                <Text style={[styles.cartRowBottomLabel, { marginTop: 17 }]}>Lottery No.</Text>
+                <View style={{ flex: 1 }}>
+                    <TextInput
+                        style={[
+                            styles.cartRowInputLottery,
+                            { flex: undefined, width: '100%' },
+                            showWarning && { borderColor: '#ef4444', backgroundColor: '#fef2f2' }
+                        ]}
+                        placeholder={maxLen > 0 ? `Enter ${maxLen}-digit Lottery Number` : "Enter Lottery Number"}
+                        value={item.lotteryNo || ''}
+                        onChangeText={(text) => onLotteryNoChange(text, index)}
+                        keyboardType="numeric"
+                        editable={!!item.product_id}
+                        maxLength={maxLen > 0 ? maxLen : undefined}
+                    />
+                    {showWarning && (
+                        <Text style={{ color: '#ef4444', fontSize: 11, marginTop: 4, marginLeft: 2, fontWeight: '600' }}>
+                            <MaterialCommunityIcons name="alert-circle-outline" size={12} /> Requires exactly {maxLen} digits
                         </Text>
-                    ) : (
-                        <Text style={styles.cartItemPrice}>Qty: {item.qty}</Text>
                     )}
                 </View>
-                <View style={styles.cartItemActions}>
-                    <TouchableOpacity style={styles.actionBtnEdit} onPress={() => onEditDesc(index)}>
-                        <MaterialCommunityIcons name="pencil-outline" size={16} color="#3a48c2" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtnRemove} onPress={() => onRemove(index)}>
-                        <MaterialCommunityIcons name="delete-outline" size={18} color="#dc2626" />
-                    </TouchableOpacity>
-                </View>
             </View>
+
+            {/* Box Permutations Display */}
+            {item.box === 1 && !item.index_type && item.permutations && item.permutations.length > 0 && (
+                <View style={{ marginTop: 2, padding: 8, backgroundColor: '#F0F1FF', borderRadius: 8, borderWidth: 1, borderColor: '#D0D4FF' }}>
+                    <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#3a48c2', marginBottom: 4 }}>
+                        Possibilities ({item.permutations.length}):
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                        {item.permutations.map((perm, idx) => (
+                            <View key={idx} style={{ backgroundColor: '#fff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: '#3a48c2' }}>
+                                <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#3a48c2' }}>{perm}</Text>
+                            </View>
+                        ))}
+                    </View>
+                </View>
+            )}
         </View>
     );
 });
@@ -297,13 +347,13 @@ const SalesScreen = ({ navigation }) => {
     // Quantity modal for adding to cart
     const [showQtyModal, setShowQtyModal] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
-    const [qty, setQty] = useState('1');
+    const [qty, setQty] = useState('');
     const [desc, setDesc] = useState('');
     const [lotteryNo, setLotteryNo] = useState('');
     const [permutations, setPermutations] = useState([]);
     const [isBoxProduct, setIsBoxProduct] = useState(false);
 
-    const [editingCartIndex, setEditingCartIndex] = useState(null);
+    const [activeRowIndex, setActiveRowIndex] = useState(null);
 
     const [showAllCategories, setShowAllCategories] = useState(false);
     const [nextInvoiceNumber, setNextInvoiceNumber] = useState(null);
@@ -321,7 +371,7 @@ const SalesScreen = ({ navigation }) => {
     const displayedCategories = showAllCategories ? visibleCategories : visibleCategories.slice(0, 6);
 
     // Calculate total
-    const grandTotal = cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const grandTotal = cartItems.reduce((sum, item) => sum + ((item.price || 0) * (parseInt(item.qty) || 0)), 0);
 
     // Load permissions on mount
     useEffect(() => {
@@ -402,8 +452,26 @@ const SalesScreen = ({ navigation }) => {
     const handleCategoryPress = useCallback((category) => {
         setSelectedCategory(category);
         fetchProductsByCategory(category.id);
-        setShowProductModal(true);
-    }, []);
+
+        if (cartItems.length === 0) {
+            setCartItems([{
+                id: Date.now().toString(),
+                category_id: category.id,
+                category_name: category.category_name,
+                time_slots: category.time_slots,
+                product_id: null,
+                product_name: '',
+                price: 0,
+                qty: '',
+                desc: '',
+                lotteryNo: '',
+                box: 0,
+                index_type: null,
+                digit_type: null,
+                permutations: []
+            }]);
+        }
+    }, [cartItems]);
 
     // Generate all permutations of an array
     const generatePermutations = (arr) => {
@@ -419,123 +487,111 @@ const SalesScreen = ({ navigation }) => {
         return result;
     };
 
-    // Handle lottery number change for box products
-    const handleLotteryNoChange = (text) => {
-        // Only allow digits
-        const maxLen = getIndexMaxLength();
-        const digitsOnly = text.replace(/[^0-9]/g, '').slice(0, maxLen > 0 ? maxLen : 5);
-        setLotteryNo(digitsOnly);
+    const handleRowLotteryNoChange = useCallback((text, index) => {
+        const item = cartItems[index];
 
-        // Box permutation logic only for non-index products
-        if (!selectedProduct?.index_type && digitsOnly.length >= 3) {
-            const digits = digitsOnly.split('');
-            const perms = generatePermutations(digits);
-            const permNumbers = [...new Set(perms.map(p => p.join('')))];
-            setPermutations(permNumbers);
-            setQty(permNumbers.length.toString());
-            setDesc(permNumbers.join(', '));
-        } else if (selectedProduct?.index_type) {
-            // Index products: desc = the entered digits, qty stays 1
-            setPermutations([]);
-            setQty('1');
-            setDesc(digitsOnly);
-        } else {
-            setPermutations([]);
-            setQty('1');
-            setDesc('');
-        }
-    };
-
-    // Get max digit length based on product's index_type
-    const getIndexMaxLength = () => {
-        const idx = selectedProduct?.index_type?.toUpperCase();
-        if (!idx) return 0; // 0 = no limit
-        if (['A', 'B', 'C'].includes(idx)) return 1;
-        if (['AB', 'BC', 'AC'].includes(idx)) return 2;
-        return 0;
-    };
-
-    const handleProductSelect = (product) => {
-        setEditingCartIndex(null);
-        setSelectedProduct(product);
-        setQty('1');
-        setDesc('');
-        setLotteryNo('');
-        setPermutations([]);
-        setIsBoxProduct(product.box === 1);
-        setShowProductModal(false);
-        setShowQtyModal(true);
-    };
-
-    const handleAddToCart = () => {
-        if (!selectedProduct || !selectedCategory) {
-            Alert.alert('Error', 'Please select a product');
-            return;
-        }
-
-        const quantity = parseInt(qty);
-        if (!quantity || quantity < 1) {
-            Alert.alert('Validation Error', 'Quantity must be at least 1');
-            return;
-        }
-
-        // Validate Lottery No (description)
-        if (!desc.trim()) {
-            Alert.alert('Validation Error', 'Please enter the lottery number');
-            return;
-        }
-
-        const newItem = {
-            category_id: selectedCategory.id,
-            category_name: selectedCategory.category_name,
-            time_slots: selectedCategory.time_slots, // Include time slots for receipt printing
-            product_id: selectedProduct.id,
-            product_name: selectedProduct.product_name,
-            product_code: selectedProduct.product_code,
-            price: selectedProduct.price,
-            qty: quantity,
-            desc: desc.trim(),
-            box: selectedProduct.box,
-            index_type: selectedProduct.index_type,
-            lotteryNo: lotteryNo
+        const getReqLen = () => {
+            const idx = item.index_type?.toUpperCase();
+            if (idx) {
+                if (['A', 'B', 'C'].includes(idx)) return 1;
+                if (['AB', 'BC', 'AC'].includes(idx)) return 2;
+            }
+            return item.digit_type || 0;
         };
 
-        if (editingCartIndex !== null) {
-            // Update existing cart item
-            const updatedItems = [...cartItems];
-            updatedItems[editingCartIndex] = newItem;
-            setCartItems(updatedItems);
-            setEditingCartIndex(null);
-        } else {
-            // Check if product already exists in cart with the SAME lottery number
-            const existingIndex = cartItems.findIndex(item =>
-                item.product_id === selectedProduct.id &&
-                item.desc === desc.trim()
-            );
+        const maxLen = getReqLen();
+        const digitsOnly = text.replace(/[^0-9]/g, '');
+        const finalDigits = maxLen > 0 ? digitsOnly.slice(0, maxLen) : digitsOnly;
 
-            if (existingIndex >= 0) {
-                // Update quantity for the exact same lottery number
-                const updatedItems = [...cartItems];
-                updatedItems[existingIndex].qty += quantity;
-                setCartItems(updatedItems);
-            } else {
-                // Add as a new entry if lottery number is different
-                setCartItems([...cartItems, newItem]);
+        let newQty = item.qty;
+        let newDesc = finalDigits;
+        let perms = [];
+
+        if (item.box === 1 && !item.index_type && finalDigits.length >= 3) {
+            const digits = finalDigits.split('');
+            const p = generatePermutations(digits);
+            perms = [...new Set(p.map(x => x.join('')))];
+            newQty = perms.length.toString();
+            newDesc = perms.join(', ');
+        } else if (item.index_type) {
+            newDesc = finalDigits;
+        } else {
+            newDesc = finalDigits;
+            if (item.box === 1 && !item.index_type) {
+                newQty = '';
             }
         }
 
-        setShowQtyModal(false);
-        setSelectedProduct(null);
-        setSelectedCategory(null);
-        setQty('1');
-        setDesc('');
-        setLotteryNo('');
-    };
+        const newCart = [...cartItems];
+        newCart[index] = {
+            ...item,
+            lotteryNo: finalDigits,
+            desc: newDesc,
+            qty: newQty,
+            permutations: perms
+        };
+        setCartItems(newCart);
+    }, [cartItems]);
+
+    const handleRowQtyChange = useCallback((text, index) => {
+        const newCart = [...cartItems];
+        newCart[index] = { ...newCart[index], qty: text.replace(/[^0-9]/g, '') };
+        setCartItems(newCart);
+    }, [cartItems]);
+
+    const handleProductSelect = useCallback((product) => {
+        if (activeRowIndex !== null) {
+            const newCart = [...cartItems];
+            newCart[activeRowIndex] = {
+                ...newCart[activeRowIndex],
+                product_id: product.id,
+                product_name: product.product_name,
+                product_code: product.product_code,
+                price: product.price,
+                box: product.box,
+                index_type: product.index_type,
+                digit_type: product.digit_type || 0,
+                qty: '',
+                desc: '',
+                lotteryNo: '',
+                permutations: []
+            };
+            setCartItems(newCart);
+            setActiveRowIndex(null);
+        }
+        setShowProductModal(false);
+    }, [activeRowIndex, cartItems]);
+
+    const handleAddRow = useCallback(() => {
+        if (!selectedCategory) return;
+        setCartItems([...cartItems, {
+            id: Date.now().toString() + Math.random(),
+            category_id: selectedCategory.id,
+            category_name: selectedCategory.category_name,
+            time_slots: selectedCategory.time_slots,
+            product_id: null,
+            product_name: '',
+            price: 0,
+            qty: '',
+            desc: '',
+            lotteryNo: '',
+            box: 0,
+            index_type: null,
+            digit_type: null,
+            permutations: []
+        }]);
+    }, [cartItems, selectedCategory]);
 
     const handleRemoveFromCart = (index) => {
+        if (!cartItems[index].product_id) {
+            const updatedItems = cartItems.filter((_, i) => i !== index);
+            setCartItems(updatedItems);
+            return;
+        }
+
         Alert.alert(
             'Remove Item',
-            'Are you sure you want to remove this item from cart?',
+            'Are you sure you want to remove this item?',
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -550,55 +606,26 @@ const SalesScreen = ({ navigation }) => {
         );
     };
 
+    const getRequiredLotteryLength = useCallback(() => {
+        if (!selectedProduct) return 0;
+        const idx = selectedProduct.index_type?.toUpperCase();
+        if (idx) {
+            if (['A', 'B', 'C'].includes(idx)) return 1;
+            if (['AB', 'BC', 'AC'].includes(idx)) return 2;
+        }
+        return selectedProduct.digit_type || 0;
+    }, [selectedProduct]);
+
     const handleClearCart = () => {
         Alert.alert(
             'Clear Cart',
-            'Are you sure you want to remove all items from cart?',
+            'Are you sure you want to remove all items?',
             [
                 { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Clear All',
-                    style: 'destructive',
-                    onPress: () => setCartItems([])
-                }
+                { text: 'Clear All', style: 'destructive', onPress: () => setCartItems([]) }
             ]
         );
     };
-
-    const handleEditDesc = useCallback((index) => {
-        const item = cartItems[index];
-        setEditingCartIndex(index);
-
-        setSelectedCategory({
-            id: item.category_id,
-            category_name: item.category_name,
-            time_slots: item.time_slots,
-        });
-
-        setSelectedProduct({
-            id: item.product_id,
-            product_name: item.product_name,
-            product_code: item.product_code,
-            price: item.price,
-            box: item.box,
-            index_type: item.index_type
-        });
-
-        setIsBoxProduct(item.box === 1);
-        setLotteryNo(item.lotteryNo || item.desc || '');
-        setQty(item.qty.toString());
-        setDesc(item.desc || '');
-
-        if (item.box === 1 && !item.index_type && (item.lotteryNo || item.desc)) {
-            const digits = (item.lotteryNo || item.desc).replace(/[^0-9]/g, '').split('');
-            const perms = generatePermutations(digits);
-            setPermutations([...new Set(perms.map(p => p.join('')))]);
-        } else {
-            setPermutations([]);
-        }
-
-        setShowQtyModal(true);
-    }, [cartItems]);
 
     // Print receipt via Bluetooth (uses persistent connection for speed)
     const handlePrintReceipt = async (invoiceNo, items, username) => {
@@ -637,15 +664,49 @@ const SalesScreen = ({ navigation }) => {
     };
 
     const handleSubmitSales = async () => {
-        if (cartItems.length === 0) {
-            Alert.alert('Error', 'Please add at least one product to cart');
+        const validItems = cartItems.filter(item => item.product_id !== null);
+
+        if (validItems.length === 0) {
+            Alert.alert('Error', 'Please select at least one product');
             return;
+        }
+
+        for (const item of validItems) {
+            const quantity = parseInt(item.qty);
+            if (!quantity || quantity < 1) {
+                Alert.alert('Validation Error', `Quantity must be at least 1 for ${item.product_name}`);
+                return;
+            }
+            if (!item.desc?.trim()) {
+                Alert.alert('Validation Error', `Please enter the lottery number for ${item.product_name}`);
+                return;
+            }
+
+            const getReqLen = () => {
+                const idx = item.index_type?.toUpperCase();
+                if (idx) {
+                    if (['A', 'B', 'C'].includes(idx)) return 1;
+                    if (['AB', 'BC', 'AC'].includes(idx)) return 2;
+                }
+                return item.digit_type || 0;
+            };
+            const reqLen = getReqLen();
+            if (reqLen > 0) {
+                const currentLotteryNo = (item.index_type || (item.box === 1 && !item.index_type))
+                    ? item.lotteryNo
+                    : item.desc;
+
+                if (currentLotteryNo.length !== reqLen) {
+                    Alert.alert('Validation Error', `Please enter a valid ${reqLen}-digit lottery number for ${item.product_name}.`);
+                    return;
+                }
+            }
         }
 
         setIsSubmitting(true);
         try {
             // Submit all items as a batch with single invoice
-            const items = cartItems.map(item => ({
+            const items = validItems.map(item => ({
                 product_id: item.product_id,
                 qty: item.qty,
                 desc: item.desc || null
@@ -655,14 +716,14 @@ const SalesScreen = ({ navigation }) => {
 
             // Extract invoice number from response
             const invoiceNumber = response.data?.invoice_number || 'N/A';
-            const itemsCount = response.data?.items_count || cartItems.length;
+            const itemsCount = response.data?.items_count || validItems.length;
 
             // Get username for receipt
             const { user: userData } = await authService.getAuthData();
             const username = userData?.name || userData?.username || 'User';
 
             // Keep a copy of cart items for printing
-            const itemsToPrint = [...cartItems];
+            const itemsToPrint = [...validItems];
 
             // Clear cart first
             setCartItems([]);
@@ -747,15 +808,20 @@ const SalesScreen = ({ navigation }) => {
                             <Text style={styles.sectionTitle}>Select Category</Text>
                             <Text style={styles.sectionSubtitle}>Tap a category to view and select products</Text>
                             <View style={styles.categoryGrid}>
-                                {displayedCategories.map((category, index) => (
-                                    <CategoryCard
-                                        key={category.id}
-                                        category={category}
-                                        index={index}
-                                        isSelected={false}
-                                        onPress={() => handleCategoryPress(category)}
-                                    />
-                                ))}
+                                {displayedCategories.map((category, index) => {
+                                    const isCartActive = cartItems.length > 0;
+                                    const isDisabled = isCartActive && cartItems[0].category_id !== category.id;
+                                    return (
+                                        <CategoryCard
+                                            key={category.id}
+                                            category={category}
+                                            index={index}
+                                            isSelected={isCartActive && cartItems[0].category_id === category.id}
+                                            disabled={isDisabled}
+                                            onPress={() => handleCategoryPress(category)}
+                                        />
+                                    );
+                                })}
                             </View>
 
                             {/* Show More / Show Less Button */}
@@ -796,21 +862,59 @@ const SalesScreen = ({ navigation }) => {
                                     </TouchableOpacity>
                                 </View>
 
+                                {/* Cart Header Row */}
+                                <View style={styles.cartTableHeader}>
+                                    <Text style={[styles.cartTableHeaderText, { flex: 1, paddingLeft: 8 }]}>Products</Text>
+                                    <Text style={[styles.cartTableHeaderText, { width: 95, textAlign: 'left' }]}>Quantity</Text>
+                                    <Text style={[styles.cartTableHeaderText, { width: 60, textAlign: 'right' }]}>Total</Text>
+                                    <View style={{ width: 30 }} />
+                                </View>
+
                                 {cartItems.map((item, index) => (
                                     <CartItem
-                                        key={`${item.product_id}-${index}`}
+                                        key={item.id || `${item.product_id}-${index}`}
                                         item={item}
                                         index={index}
+                                        onSelectProduct={(idx) => {
+                                            setActiveRowIndex(idx);
+                                            setShowProductModal(true);
+                                        }}
                                         onRemove={handleRemoveFromCart}
-                                        onEditDesc={handleEditDesc}
+                                        onLotteryNoChange={handleRowLotteryNoChange}
+                                        onQtyChange={handleRowQtyChange}
                                     />
                                 ))}
 
+                                <TouchableOpacity style={styles.addRowButton} onPress={handleAddRow}>
+                                    <MaterialCommunityIcons name="plus-circle" size={18} color="#3a48c2" />
+                                    <Text style={styles.addRowButtonText}>Add Product</Text>
+                                </TouchableOpacity>
+
                                 {/* Grand Total */}
                                 <View style={styles.grandTotalContainer}>
-                                    <Text style={styles.grandTotalLabel}>Grand Total</Text>
+                                    <View>
+                                        <Text style={styles.grandTotalLabel}>Grand Total</Text>
+                                        <Text style={{ fontSize: 13, color: '#888', marginTop: 4 }}>{cartItems.length} item(s)</Text>
+                                    </View>
                                     <Text style={styles.grandTotalValue}>₹{Math.round(grandTotal)}</Text>
                                 </View>
+
+                                {permissions.add && (
+                                    <TouchableOpacity
+                                        style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled, { marginTop: 16, justifyContent: 'center' }]}
+                                        onPress={handleSubmitSales}
+                                        disabled={isSubmitting}
+                                    >
+                                        {isSubmitting ? (
+                                            <ActivityIndicator color="#fff" size="small" />
+                                        ) : (
+                                            <>
+                                                <MaterialCommunityIcons name="check-circle" size={22} color="#fff" />
+                                                <Text style={styles.submitButtonText}>Submit Sale</Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         )}
 
@@ -826,31 +930,7 @@ const SalesScreen = ({ navigation }) => {
                 )}
             </ScrollView>
 
-            {/* Bottom Submit Button */}
-            {permissions.add && cartItems.length > 0 && (
-                <View style={styles.bottomBar}>
-                    <View style={styles.bottomBarContent}>
-                        <View style={styles.bottomBarInfo}>
-                            <Text style={styles.bottomBarItems}>{cartItems.length} item(s)</Text>
-                            <Text style={styles.bottomBarTotal}>₹{Math.round(grandTotal)}</Text>
-                        </View>
-                        <TouchableOpacity
-                            style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-                            onPress={handleSubmitSales}
-                            disabled={isSubmitting}
-                        >
-                            {isSubmitting ? (
-                                <ActivityIndicator color="#fff" size="small" />
-                            ) : (
-                                <>
-                                    <MaterialCommunityIcons name="check-circle" size={22} color="#fff" />
-                                    <Text style={styles.submitButtonText}>Submit </Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            )}
+
 
             {/* Products Modal */}
             <Modal
@@ -969,14 +1049,22 @@ const SalesScreen = ({ navigation }) => {
                                                     )}
                                                 </View>
                                                 <TextInput
-                                                    style={styles.input}
+                                                    style={[
+                                                        styles.input,
+                                                        getRequiredLotteryLength() > 0 && typeof lotteryNo === 'string' && lotteryNo.length > 0 && lotteryNo.length < getRequiredLotteryLength() && { borderColor: '#ef4444', backgroundColor: '#fef2f2' }
+                                                    ]}
                                                     placeholder="Enter lottery digits"
                                                     value={lotteryNo}
                                                     onChangeText={handleLotteryNoChange}
                                                     keyboardType="numeric"
                                                     placeholderTextColor="#999"
-                                                    maxLength={6}
+                                                    maxLength={getRequiredLotteryLength() > 0 ? getRequiredLotteryLength() : 6}
                                                 />
+                                                {getRequiredLotteryLength() > 0 && typeof lotteryNo === 'string' && lotteryNo.length > 0 && lotteryNo.length < getRequiredLotteryLength() && (
+                                                    <Text style={{ color: '#ef4444', fontSize: 11, marginTop: 4, marginLeft: 2, fontWeight: '600' }}>
+                                                        <MaterialCommunityIcons name="alert-circle-outline" size={12} /> Requires exactly {getRequiredLotteryLength()} digits
+                                                    </Text>
+                                                )}
                                             </View>
 
                                             {/* Permutations Display */}
@@ -1028,31 +1116,14 @@ const SalesScreen = ({ navigation }) => {
                                             <View style={styles.inputGroup}>
                                                 <Text style={styles.label}>Quantity *</Text>
                                                 <View style={styles.qtyContainer}>
-                                                    <TouchableOpacity
-                                                        style={styles.qtyBtn}
-                                                        onPress={() => {
-                                                            const newQty = Math.max(1, parseInt(qty || 1) - 1);
-                                                            setQty(newQty.toString());
-                                                        }}
-                                                    >
-                                                        <MaterialCommunityIcons name="minus" size={24} color="#3a48c2" />
-                                                    </TouchableOpacity>
                                                     <TextInput
                                                         style={styles.qtyInput}
                                                         value={qty}
                                                         onChangeText={setQty}
                                                         keyboardType="numeric"
                                                         textAlign="center"
+                                                        placeholder="Enter quantity"
                                                     />
-                                                    <TouchableOpacity
-                                                        style={styles.qtyBtn}
-                                                        onPress={() => {
-                                                            const newQty = parseInt(qty || 0) + 1;
-                                                            setQty(newQty.toString());
-                                                        }}
-                                                    >
-                                                        <MaterialCommunityIcons name="plus" size={24} color="#3a48c2" />
-                                                    </TouchableOpacity>
                                                 </View>
                                             </View>
 
@@ -1073,24 +1144,27 @@ const SalesScreen = ({ navigation }) => {
                                                     )}
                                                 </View>
                                                 <TextInput
-                                                    style={[styles.input, !selectedProduct?.index_type && styles.textArea]}
-                                                    placeholder={selectedProduct?.index_type
-                                                        ? `Enter ${getIndexMaxLength()} digit(s) for ${selectedProduct.index_type}`
+                                                    style={[
+                                                        styles.input,
+                                                        !selectedProduct?.index_type && styles.textArea,
+                                                        getRequiredLotteryLength() > 0 && typeof (selectedProduct?.index_type ? lotteryNo : desc) === 'string' && (selectedProduct?.index_type ? lotteryNo : desc).length > 0 && (selectedProduct?.index_type ? lotteryNo : desc).length < getRequiredLotteryLength() && { borderColor: '#ef4444', backgroundColor: '#fef2f2' }
+                                                    ]}
+                                                    placeholder={getRequiredLotteryLength() > 0
+                                                        ? `Enter exactly ${getRequiredLotteryLength()} digit(s)`
                                                         : "Enter lottery number"}
                                                     value={selectedProduct?.index_type ? lotteryNo : desc}
-                                                    onChangeText={(text) => {
-                                                        if (selectedProduct?.index_type) {
-                                                            handleLotteryNoChange(text);
-                                                        } else {
-                                                            setDesc(text);
-                                                        }
-                                                    }}
+                                                    onChangeText={handleLotteryNoChange}
                                                     keyboardType="numeric"
                                                     placeholderTextColor="#999"
-                                                    maxLength={getIndexMaxLength() > 0 ? getIndexMaxLength() : undefined}
+                                                    maxLength={getRequiredLotteryLength() > 0 ? getRequiredLotteryLength() : undefined}
                                                     multiline={!selectedProduct?.index_type}
                                                     numberOfLines={selectedProduct?.index_type ? 1 : 3}
                                                 />
+                                                {getRequiredLotteryLength() > 0 && typeof (selectedProduct?.index_type ? lotteryNo : desc) === 'string' && (selectedProduct?.index_type ? lotteryNo : desc).length > 0 && (selectedProduct?.index_type ? lotteryNo : desc).length < getRequiredLotteryLength() && (
+                                                    <Text style={{ color: '#ef4444', fontSize: 11, marginTop: 4, marginLeft: 2, fontWeight: '600' }}>
+                                                        <MaterialCommunityIcons name="alert-circle-outline" size={12} /> Requires exactly {getRequiredLotteryLength()} digits
+                                                    </Text>
+                                                )}
                                             </View>
                                         </>
                                     )}
@@ -1359,18 +1433,12 @@ const styles = StyleSheet.create({
         color: '#999',
         marginTop: 10,
     },
-    // Cart Section
     cartSection: {
-        margin: 20,
         marginTop: 0,
         backgroundColor: '#fff',
         borderRadius: 16,
         padding: 16,
         elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
     },
     cartHeader: {
         flexDirection: 'row',
@@ -1396,10 +1464,116 @@ const styles = StyleSheet.create({
         color: '#dc2626',
         fontWeight: '600',
     },
-    cartItem: {
-        paddingVertical: 14,
+    cartTableHeader: {
+        flexDirection: 'row',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
+        marginBottom: 8,
+        alignItems: 'center'
+    },
+    cartTableHeaderText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#666',
+        textTransform: 'uppercase'
+    },
+    cartRowContainer: {
+        paddingVertical: 12,
         borderBottomWidth: 1,
         borderBottomColor: '#f0f0f0',
+        gap: 10
+    },
+    cartRowTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8
+    },
+    cartRowBottom: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    cartRowBottomLabel: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#666',
+        width: 95,
+    },
+    cartRowProduct: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F5F7FA',
+        paddingHorizontal: 12,
+        paddingVertical: 14,
+        borderRadius: 8,
+        minHeight: 52,
+    },
+    cartRowProductText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#1a1a1a',
+        flexShrink: 1
+    },
+    cartRowProductTextPlaceholder: {
+        fontSize: 13,
+        color: '#999',
+    },
+    cartRowInputLottery: {
+        flex: 1,
+        backgroundColor: '#F5F7FA',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 12,
+        fontSize: 16,
+        color: '#1a1a1a',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        minHeight: 52,
+    },
+    cartRowInputQty: {
+        width: 95,
+        backgroundColor: '#F5F7FA',
+        borderRadius: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 12,
+        fontSize: 16,
+        color: '#1a1a1a',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        textAlign: 'center',
+        minHeight: 52,
+    },
+    cartRowAmount: {
+        width: 60,
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+    },
+    cartRowAmountText: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#15803d',
+    },
+    cartRowAction: {
+        width: 30,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    addRowButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        marginTop: 12,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        backgroundColor: '#EEF0FF',
+        borderRadius: 8,
+        gap: 6
+    },
+    addRowButtonText: {
+        color: '#3a48c2',
+        fontWeight: 'bold',
+        fontSize: 14
     },
     cartItemTopRow: {
         flexDirection: 'row',

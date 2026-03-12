@@ -158,7 +158,7 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
     }, []);
 
     const formatCurrency = useCallback((amount) => {
-        return `Rs. ${Math.round(parseFloat(amount) || 0).toLocaleString('en-IN')}`;
+        return `${Math.round(parseFloat(amount) || 0).toLocaleString('en-IN')}`;
     }, []);
 
     // Generate A4 PDF and share via WhatsApp
@@ -185,7 +185,7 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
                             <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 14px; color: #1a1a1a; font-weight: 600; letter-spacing: 1px;">${item.desc || '-'}</td>
                             <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${item.product_name || item.product_code || '-'}</td>
                             <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #333; text-align: center; font-weight: 600;">${item.qty || 0}</td>
-                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #189b39; text-align: right; font-weight: 700;">Rs. ${Math.round(parseFloat(item.total) || 0)}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #189b39; text-align: right; font-weight: 700;">${Math.round(parseFloat(item.total) || 0)}</td>
                         </tr>
                     `;
                 }).join('');
@@ -194,7 +194,7 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
                     <div style="margin-bottom: 24px;">
                         <div style="background: #3a48c2; padding: 12px 18px; border-radius: 8px 8px 0 0; margin-bottom: 0; page-break-after: avoid;">
                             <span style="font-size: 15px; font-weight: 700; color: #fff;">${digitCount}-Digit Numbers</span>
-                            <span style="float: right; font-size: 13px; color: #fff; font-weight: 600;">${items.length} items | Qty: ${totalQty} | Rs. ${Math.round(totalAmount)}</span>
+                            <span style="float: right; font-size: 13px; color: #fff; font-weight: 600;">${items.length} items | Qty: ${totalQty} | ${Math.round(totalAmount)}</span>
                         </div>
                         <table style="width: 100%; border-collapse: collapse; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border-radius: 0 0 8px 8px; overflow: hidden; border: 1px solid #eee;">
                             <thead>
@@ -239,7 +239,7 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
                     <div style="display: flex; justify-content: space-between; background: #fff; border: 1px solid #f0f0f5; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; font-size: 15px;">
                         <span>Total Entries: <strong style="color: #3a48c2;">${totalEntries}</strong></span>
                         <span>Total Qty: <strong style="color: #3a48c2;">${totalQtyAll}</strong></span>
-                        <span>Total Amount: <strong style="color: #189b39;">Rs. ${Math.round(totalAmtAll)}</strong></span>
+                        <span>Total Amount: <strong style="color: #189b39;">${Math.round(totalAmtAll)}</strong></span>
                     </div>
 
                     ${buildGroupSection(4, digitGroups[4] || [])}
