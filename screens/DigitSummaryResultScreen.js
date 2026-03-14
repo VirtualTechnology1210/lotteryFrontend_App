@@ -18,11 +18,17 @@ import { reportService } from '../services/reportService';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import Share from 'react-native-share';
 
+// Helper to format comma-separated lottery numbers into a vertical list
+const formatDescForUI = (desc) => {
+    if (!desc) return '-';
+    return desc.split(',').map(n => n.trim()).filter(Boolean).join('\n');
+};
+
 // Memoized components for better performance
 const DigitRow = React.memo(({ item, index, isLast, formatCurrency }) => (
     <View style={[styles.tableRow, isLast && styles.tableRowLast]}>
         <Text style={[styles.tableCell, { flex: 0.4, color: '#9CA3AF' }]}>{index + 1}</Text>
-        <Text style={[styles.tableCellLottery, { flex: 1.5 }]}>{item.desc || '-'}</Text>
+        <Text style={[styles.tableCellLottery, { flex: 1.5 }]}>{formatDescForUI(item.desc)}</Text>
         <Text style={[styles.tableCell, { flex: 1.2 }]} numberOfLines={1}>{item.product_name || item.product_code || '-'}</Text>
         <Text style={[styles.tableCellQty, { flex: 0.6, textAlign: 'center' }]}>{item.qty || 0}</Text>
         <Text style={[styles.tableCellAmount, { flex: 1.3, textAlign: 'right' }]}>{formatCurrency(item.total)}</Text>
@@ -99,8 +105,12 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
             const lotteryNumber = (item.desc || '').trim();
             if (!lotteryNumber) return;
 
-            // Extract only digits
-            const digitsOnly = lotteryNumber.replace(/\D/g, '');
+            // Box products have comma-separated values like '123, 132, 213'.
+            // Extract only the first number to determine the digit count.
+            const firstLotteryNumber = lotteryNumber.split(',')[0].trim();
+
+            // Extract only digits from the first number
+            const digitsOnly = firstLotteryNumber.replace(/\D/g, '');
             const digitCount = digitsOnly.length;
 
             if (digitCount >= 4) {
@@ -179,13 +189,14 @@ const DigitSummaryResultScreen = ({ navigation, route }) => {
 
                 const rows = items.map((item, index) => {
                     const bgColor = index % 2 === 0 ? '#ffffff' : '#f8f9fd';
+                    const lotteryFormatted = (item.desc || '-').split(',').map(n => n.trim()).filter(Boolean).join('<br/>');
                     return `
                         <tr style="background-color: ${bgColor};">
-                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${index + 1}</td>
-                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 14px; color: #1a1a1a; font-weight: 600; letter-spacing: 1px;">${item.desc || '-'}</td>
-                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555;">${item.product_name || item.product_code || '-'}</td>
-                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #333; text-align: center; font-weight: 600;">${item.qty || 0}</td>
-                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #189b39; text-align: right; font-weight: 700;">${Math.round(parseFloat(item.total) || 0)}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555; vertical-align: top;">${index + 1}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 14px; color: #1a1a1a; font-weight: 600; letter-spacing: 1px; vertical-align: top; line-height: 1.5;">${lotteryFormatted}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #555; vertical-align: top;">${item.product_name || item.product_code || '-'}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #333; text-align: center; font-weight: 600; vertical-align: top;">${item.qty || 0}</td>
+                            <td style="padding: 10px 14px; border-bottom: 1px solid #eee; font-size: 13px; color: #189b39; text-align: right; font-weight: 700; vertical-align: top;">${Math.round(parseFloat(item.total) || 0)}</td>
                         </tr>
                     `;
                 }).join('');

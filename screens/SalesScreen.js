@@ -886,8 +886,8 @@ const SalesScreen = ({ navigation }) => {
                                 ))}
 
                                 <TouchableOpacity style={styles.addRowButton} onPress={handleAddRow}>
-                                    <MaterialCommunityIcons name="plus-circle" size={18} color="#3a48c2" />
-                                    <Text style={styles.addRowButtonText}>Add Product</Text>
+                                    <MaterialCommunityIcons name="plus-circle" size={25} color="#289b24ff" />
+                                    <Text style={styles.addRowButtonText}>Add Products</Text>
                                 </TouchableOpacity>
 
                                 {/* Grand Total */}
@@ -1562,16 +1562,16 @@ const styles = StyleSheet.create({
     addRowButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        alignSelf: 'flex-start',
+        alignSelf: 'flex-end',
         marginTop: 12,
         paddingVertical: 8,
         paddingHorizontal: 16,
-        backgroundColor: '#EEF0FF',
+        backgroundColor: '#dcf8d8ff',
         borderRadius: 8,
         gap: 6
     },
     addRowButtonText: {
-        color: '#3a48c2',
+        color: '#289b24ff',
         fontWeight: 'bold',
         fontSize: 14
     },

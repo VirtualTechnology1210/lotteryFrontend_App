@@ -397,8 +397,7 @@ function addItemRows(b, items) {
         totalAmount += lineTotal;
 
         const nameLines = wrapText(productName, 9);  // 9 chars × 16 = 144 dots
-        const descParts = desc.split(',').map(p => p.trim()).filter(p => p);
-        const descMaxPairs = descParts.length > 3 ? 2 : 1;
+        const descMaxPairs = 1;
         const descLines = getDescLines(desc, descMaxPairs);
         const rows = Math.max(nameLines.length, descLines.length);
 
@@ -542,6 +541,7 @@ export const formatSalesReceipt = (data, width = '80') => {
         desc: item.desc || '-',
         qty: item.qty,
         price: item.price,
+        box: item.box,
     }));
 
     return formatLotteryReceipt({
@@ -613,6 +613,7 @@ export const formatSalesReportReceipt = (reportData, _width = '80') => {
                 desc: item.desc || '-',
                 qty: Number(item.qty) || 0,
                 price: Number(item.unit_price) || 0,
+                box: item.box,
             }));
 
             const { totalQty, totalAmount } = addItemRows(b, mapped);
@@ -627,6 +628,7 @@ export const formatSalesReportReceipt = (reportData, _width = '80') => {
                 desc: item.desc || '-',
                 qty: Number(item.qty) || 0,
                 price: Number(item.unit_price) || 0,
+                box: item.box,
             }));
             const { totalQty, totalAmount } = addItemRows(b, mapped);
             grandQty += totalQty;

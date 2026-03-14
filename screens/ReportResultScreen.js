@@ -52,6 +52,8 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                             <MaterialCommunityIcons name="basket-outline" size={20} color="#3a48c2" style={{ marginRight: 6 }} />
                             <Text style={styles.productName}>{item.items.length} - Items </Text>
+                            <Text style={{ fontSize: 9, color: '#000000ff', textTransform: 'uppercase' }}>       Sold By   :   </Text>
+                            <Text style={{ fontSize: 12, color: '#3a48c2', fontWeight: '600' }}>{item.created_by}</Text>
                         </View>
                         {item.invoice_number && (
                             <View style={styles.invoiceBadge}>
@@ -75,17 +77,40 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                                 onPress={() => handleEditSingle(subItem)}
                                 activeOpacity={0.7}
                             >
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.subItemMeta}>
-                                        {subItem.qty} x ₹{subItem.unit_price ? Math.round(subItem.unit_price) : '0'}
-                                    </Text>
+                                <View style={{ flex: 1, paddingRight: 8 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                                        <View style={{ backgroundColor: '#000000ff', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+                                            <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#ffffffff' }}>{idx + 1}</Text>
+                                        </View>
+                                        {subItem.category_name && (
+                                            <View style={[styles.codeBadge, { backgroundColor: '#E8F5E9', paddingHorizontal: 6, paddingVertical: 1, marginLeft: 0 }]}>
+                                                <Text style={[styles.codeText, { color: '#2E7D32', fontSize: 10 }]}>{subItem.category_name}</Text>
+                                            </View>
+                                        )}
+                                        {subItem.product_code && (
+                                            <View style={[styles.codeBadge, { paddingHorizontal: 6, paddingVertical: 1 }]}>
+                                                <Text style={[styles.codeText, { fontSize: 10 }]}>{subItem.product_code}</Text>
+                                            </View>
+                                        )}
+
+                                    </View>
+
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15, marginBottom: 4 }}>
+                                        <View>
+                                            <Text style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase' }}>Price x Qty</Text>
+                                            <Text style={{ fontSize: 12, color: '#333', fontWeight: '600' }}>
+                                                ₹{subItem.unit_price ? Math.round(subItem.unit_price) : '0'} x {subItem.qty}
+                                            </Text>
+                                        </View>
+                                    </View>
+
                                     {subItem.desc ? (
-                                        <Text style={styles.subItemDesc} numberOfLines={1}>Note: {subItem.desc}</Text>
+                                        <Text style={[styles.subItemDesc, { fontWeight: 'bold', color: '#333' }]}>Lottery No   :    {subItem.desc}</Text>
                                     ) : null}
                                 </View>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                                    <Text style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase', marginBottom: 2 }}>Item Total</Text>
                                     <Text style={styles.subItemTotal}>₹{Math.round(parseFloat(subItem.total))}</Text>
-                                    {/* <MaterialCommunityIcons name="pencil-outline" size={14} color="#3a48c2" /> */}
                                 </View>
                             </TouchableOpacity>
                         ))}
@@ -164,7 +189,7 @@ const ReportItem = memo(({ item, formatDateTime, navigation }) => {
                         <Text style={styles.detailValue}>{item.qty}</Text>
                     </View>
                     <View style={[styles.detailItem, { alignItems: 'flex-end' }]}>
-                        <Text style={styles.detailLabel}>Created By</Text>
+                        <Text style={styles.detailLabel}>SOLD BY</Text>
                         <Text style={styles.userText}>{item.created_by || 'Unknown'}</Text>
                     </View>
                 </View>
@@ -232,6 +257,7 @@ const ReportResultScreen = ({ navigation, route }) => {
                                 invoiceGroups[item.invoice_number] = {
                                     invoice_number: item.invoice_number,
                                     created_at: item.created_at,
+                                    created_by: item.created_by,
                                     items: [],
                                     total: 0,
                                     isGroup: false,
@@ -244,6 +270,7 @@ const ReportResultScreen = ({ navigation, route }) => {
                         } else {
                             noInvoiceItems.push({
                                 ...item,
+                                created_by: item.created_by,
                                 isGroup: false,
                                 items: [item],
                                 total: parseFloat(item.total || 0),
@@ -358,19 +385,10 @@ const ReportResultScreen = ({ navigation, route }) => {
 
         setIsSharing(true);
         try {
-            const MAX_LOTTERY_PER_LINE = 3;
-
-            // Format lottery numbers: max 3 per line, comma separated
+            // Format lottery numbers: one per line
             const formatLotteryNumbers = (desc) => {
                 if (!desc || desc === '-') return '-';
-                const numbers = desc.split(',').map(n => n.trim()).filter(Boolean);
-                if (numbers.length <= MAX_LOTTERY_PER_LINE) return numbers.join(',');
-                // Split into chunks of MAX_LOTTERY_PER_LINE
-                const lines = [];
-                for (let i = 0; i < numbers.length; i += MAX_LOTTERY_PER_LINE) {
-                    lines.push(numbers.slice(i, i + MAX_LOTTERY_PER_LINE).join(','));
-                }
-                return lines.join('<br>');
+                return desc.split(',').map(n => n.trim()).filter(Boolean).join('<br>');
             };
 
             // Build table rows from rawSalesData
@@ -766,6 +784,7 @@ const styles = StyleSheet.create({
         paddingVertical: 2,
         borderRadius: 6,
         gap: 4,
+        marginBottom: 10,
         alignSelf: 'flex-start',
     },
     invoiceText: {

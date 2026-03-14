@@ -45,27 +45,25 @@ export const salesService = {
     },
     /**
      * Share sales data in text format
-     * Format: Product Name - Lottery Numbers = Quantity
+     * Format:
+     *   ── 3PM ──
+     *   KL.110 - 1265              = 1
+     *   Pol    - 2569,2596
+     *            2659,2695         = 24
      *
-     * Lottery numbers are grouped 4 per line and wrapped with aligned indentation.
-     * The quantity always appears at the end of the last lottery line.
-     * All columns (product, lottery, qty) are dynamically aligned across all items.
-     *
-     * Example output:
-     *   KL.110  -  1265                      = 1
-     *   Pol     -  2569,2596,2659,2695
-     *              2956,2965,5269,5296
-     *              9526,9562,9625,9652       = 24
+     * Showtime appears as a header, product details below.
+     * Items are grouped by their time slot.
      */
     shareSalesData: async (invoiceNo, items) => {
         try {
-            const MAX_PER_LINE = 2; // lottery numbers per line
+            const MAX_PER_LINE = 1; // lottery numbers per line
 
             // ── Pre-process all items ──
             const processed = items.map(item => {
                 const name = item.product_name || item.product_code || 'N/A';
                 const desc = item.desc || 'N/A';
                 const qty = String(item.qty || 0);
+                const showtime = String((item.time_slots && item.time_slots[0]) || '');
                 const numbers = desc.split(',').map(n => n.trim()).filter(Boolean);
 
                 // Group lottery numbers into chunks
@@ -75,14 +73,22 @@ export const salesService = {
                 }
                 if (chunks.length === 0) chunks.push('N/A');
 
-                return { name, chunks, qty };
+                return { name, chunks, qty, showtime };
             });
 
-            // ── Calculate dynamic column widths ──
-            const maxNameLen = Math.max(...processed.map(p => p.name.length), 4);
+            // ── Group items by showtime ──
+            const groups = {};
+            for (const item of processed) {
+                const key = item.showtime || '';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(item);
+            }
+
+            // ── Calculate dynamic column widths (across all items) ──
+            const maxNameLen = Math.max(...processed.map(p => p.name.length), 1);
             const maxLotteryLen = Math.max(
                 ...processed.flatMap(p => p.chunks.map(c => c.length)),
-                4
+                1
             );
             const maxQtyLen = Math.max(...processed.map(p => p.qty.length), 1);
 
@@ -94,27 +100,36 @@ export const salesService = {
 
             const lines = [];
 
-            for (const { name, chunks, qty } of processed) {
-                const paddedName = name.padEnd(maxNameLen);
-                const paddedQty = qty.padStart(maxQtyLen);
+            for (const [showtime, groupItems] of Object.entries(groups)) {
+                // Add showtime header if available
+                if (showtime) {
+                    lines.push(`── ${showtime} ──`);
+                }
 
-                for (let i = 0; i < chunks.length; i++) {
-                    const isFirst = i === 0;
-                    const isLast = i === chunks.length - 1;
-                    const prefix = isFirst ? `${paddedName}${dash}` : indent;
-                    const lottery = isLast
-                        ? chunks[i].padEnd(maxLotteryLen)
-                        : chunks[i];
+                for (const { name, chunks, qty } of groupItems) {
+                    const paddedName = name.padEnd(maxNameLen);
+                    const paddedQty = qty.padStart(maxQtyLen);
 
-                    if (isLast) {
-                        lines.push(`${prefix}${lottery}${eq}${paddedQty}`);
-                    } else {
-                        lines.push(`${prefix}${lottery}`);
+                    for (let i = 0; i < chunks.length; i++) {
+                        const isFirst = i === 0;
+                        const isLast = i === chunks.length - 1;
+                        const prefix = isFirst ? `${paddedName}${dash}` : indent;
+                        const lottery = isLast
+                            ? chunks[i].padEnd(maxLotteryLen)
+                            : chunks[i];
+
+                        if (isLast) {
+                            lines.push(`${prefix}${lottery}${eq}${paddedQty}`);
+                        } else {
+                            lines.push(`${prefix}${lottery}`);
+                        }
                     }
                 }
+
+                lines.push(''); // blank line between groups
             }
 
-            const shareText = lines.join('\n');
+            const shareText = lines.join('\n').trim();
 
             await Share.open({
                 message: shareText,
